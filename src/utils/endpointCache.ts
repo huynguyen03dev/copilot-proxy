@@ -189,7 +189,23 @@ export class EndpointCacheManager {
     // Check each cached endpoint
     for (const [cacheKey, cached] of this.cache.entries()) {
       try {
-        // Perform lightweight HEAD request to check endpoint health
+        // STABILITY FIX: Skip health checks for API endpoints that don't support HEAD/OPTIONS
+        // GitHub Copilot API endpoints only support POST, so health checks cause HTTP 405 errors
+        const isApiEndpoint = cached.url.includes('/chat/completions') ||
+                              cached.url.includes('/completions') ||
+                              cached.url.includes('/engines/')
+
+        if (isApiEndpoint) {
+          // For API endpoints, just reduce failure count if it exists (assume healthy if recently used)
+          if (cached.failureCount > 0 && (Date.now() - cached.lastUsed) < 60000) { // 1 minute
+            cached.failureCount = Math.max(0, cached.failureCount - 1)
+            logger.debug('ENDPOINT_CACHE', `Skipped health check for API endpoint ${cached.url}, reduced failure count to ${cached.failureCount}`)
+          }
+          healthyEndpoints.push(cached.url)
+          continue
+        }
+
+        // Perform lightweight HEAD request for non-API endpoints
         const response = await fetch(cached.url, {
           method: 'HEAD',
           headers: {

@@ -52,20 +52,38 @@ export class ResponseCacheManager {
     messages: any[],
     temperature?: number,
     maxTokens?: number,
-    stream?: boolean
+    stream?: boolean,
+    topP?: number,
+    presencePenalty?: number,
+    frequencyPenalty?: number,
+    stop?: string | string[]
   ): string {
-    // Create a stable hash from key request parameters
+    // PERFORMANCE OPTIMIZATION: Create collision-resistant cache key
+    // Hash the full normalized request to prevent wrong completions being served
+
+    // Normalize messages to ensure consistent hashing
+    const normalizedMessages = messages?.map(msg => ({
+      role: msg.role?.toLowerCase()?.trim() || '',
+      content: typeof msg.content === 'string'
+        ? msg.content.trim()
+        : JSON.stringify(msg.content) // Handle array content
+    })) || []
+
+    // Include all parameters that affect the response
     const keyData = {
-      model,
-      // Use first message content (truncated) for cache key
-      firstMessage: messages?.[0]?.content?.slice(0, 200) || '',
-      messageCount: messages?.length || 0,
-      temperature: temperature || 0.7,
-      maxTokens: maxTokens || null,
-      stream: stream || false
+      model: model?.trim() || '',
+      messages: normalizedMessages,
+      temperature: temperature ?? 0.7,
+      maxTokens: maxTokens ?? null,
+      stream: stream ?? false,
+      topP: topP ?? null,
+      presencePenalty: presencePenalty ?? null,
+      frequencyPenalty: frequencyPenalty ?? null,
+      stop: Array.isArray(stop) ? stop.sort() : stop // Sort arrays for consistency
     }
-    
-    const keyString = JSON.stringify(keyData)
+
+    // Create stable JSON string and hash it
+    const keyString = JSON.stringify(keyData, Object.keys(keyData).sort())
     return createHash('sha256').update(keyString).digest('hex').slice(0, 16)
   }
 
@@ -94,11 +112,15 @@ export class ResponseCacheManager {
     messages: any[],
     temperature?: number,
     maxTokens?: number,
-    stream?: boolean
+    stream?: boolean,
+    topP?: number,
+    presencePenalty?: number,
+    frequencyPenalty?: number,
+    stop?: string | string[]
   ): any | null {
     this.totalRequests++
-    
-    const key = this.generateCacheKey(model, messages, temperature, maxTokens, stream)
+
+    const key = this.generateCacheKey(model, messages, temperature, maxTokens, stream, topP, presencePenalty, frequencyPenalty, stop)
     const cached = this.cache.get(key)
     
     if (!cached) {
@@ -131,13 +153,17 @@ export class ResponseCacheManager {
     stream: boolean | undefined,
     statusCode: number,
     data: any,
-    ttl: number = this.DEFAULT_TTL
+    ttl: number = this.DEFAULT_TTL,
+    topP?: number,
+    presencePenalty?: number,
+    frequencyPenalty?: number,
+    stop?: string | string[]
   ): void {
     if (!this.isCacheable(statusCode, data)) {
       return
     }
-    
-    const key = this.generateCacheKey(model, messages, temperature, maxTokens, stream)
+
+    const key = this.generateCacheKey(model, messages, temperature, maxTokens, stream, topP, presencePenalty, frequencyPenalty, stop)
     
     // Evict old entries if cache is full
     if (this.cache.size >= this.MAX_CACHE_SIZE) {
@@ -163,9 +189,13 @@ export class ResponseCacheManager {
     temperature: number | undefined,
     maxTokens: number | undefined,
     stream: boolean | undefined,
-    operation: () => Promise<T>
+    operation: () => Promise<T>,
+    topP?: number,
+    presencePenalty?: number,
+    frequencyPenalty?: number,
+    stop?: string | string[]
   ): Promise<T> {
-    const key = this.generateCacheKey(model, messages, temperature, maxTokens, stream)
+    const key = this.generateCacheKey(model, messages, temperature, maxTokens, stream, topP, presencePenalty, frequencyPenalty, stop)
     
     // Check if request is already in flight
     const pending = this.pendingRequests.get(key)

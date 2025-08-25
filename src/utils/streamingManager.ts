@@ -95,7 +95,7 @@ export class StreamingManager {
     const reader = sourceStream.getReader()
     const metrics = this.activeStreams.get(streamId)!
     const buffer = this.streamBuffers.get(streamId)!
-    
+
     return new ReadableStream({
       start: (controller) => {
         logger.debug('STREAMING_MANAGER', `Stream ${streamId} started`)
@@ -108,7 +108,7 @@ export class StreamingManager {
 
           // Read from source with optimized buffering
           const { done, value } = await reader.read()
-          
+
           if (done) {
             await this.finalizeStream(streamId, controller)
             return
@@ -116,21 +116,48 @@ export class StreamingManager {
 
           // Process chunk with optimizations
           const processedChunk = await this.processChunkOptimized(streamId, value)
-          
+
           if (processedChunk) {
-            controller.enqueue(processedChunk)
-            this.updateMetrics(streamId, processedChunk)
+            // STABILITY FIX: Check if controller is still open before calling enqueue()
+            // Prevents "ReadableStreamDirectController is now closed" errors
+            if (controller.desiredSize !== null) {
+              controller.enqueue(processedChunk)
+              this.updateMetrics(streamId, processedChunk)
+            } else {
+              logger.debug('STREAMING_MANAGER', `Stream ${streamId} controller already closed, skipping enqueue`)
+            }
           }
 
         } catch (error) {
           logger.error('STREAMING_MANAGER', `Stream ${streamId} error: ${error}`)
-          controller.error(error)
+
+          // STABILITY FIX: Check if controller is still open before calling error()
+          // Prevents "ReadableStreamDirectController is now closed" errors
+          try {
+            if (controller.desiredSize !== null) {
+              controller.error(error)
+            } else {
+              logger.debug('STREAMING_MANAGER', `Stream ${streamId} controller already closed, skipping error()`)
+            }
+          } catch (controllerError) {
+            logger.warn('STREAMING_MANAGER', `Failed to signal error to controller for stream ${streamId}: ${controllerError}`)
+          }
+
           this.cleanupStream(streamId)
         }
       },
 
-      cancel: () => {
+      cancel: (reason) => {
         logger.debug('STREAMING_MANAGER', `Stream ${streamId} cancelled`)
+
+        // STABILITY FIX: Cancel upstream reader to prevent races
+        // This stops the source stream and reduces chance of in-flight pulls
+        try {
+          reader.cancel(reason)
+        } catch (cancelError) {
+          logger.debug('STREAMING_MANAGER', `Failed to cancel upstream reader for stream ${streamId}: ${cancelError}`)
+        }
+
         this.cleanupStream(streamId)
       }
     })
@@ -299,12 +326,24 @@ export class StreamingManager {
     const metrics = this.activeStreams.get(streamId)!
     const duration = (Date.now() - metrics.startTime) / 1000
 
-    logger.info('STREAMING_MANAGER', 
+    logger.info('STREAMING_MANAGER',
       `Stream ${streamId} completed: ${metrics.chunksProcessed} chunks in ${duration.toFixed(2)}s ` +
       `(${metrics.processingRate.toFixed(1)} chunks/sec, ${(metrics.bytesProcessed / 1024).toFixed(1)}KB)`
     )
 
-    controller.close()
+    // STABILITY FIX: Check if controller is still open before closing
+    // Prevents "ReadableStreamDirectController is now closed" errors
+    try {
+      if (controller.desiredSize !== null) {
+        controller.close()
+        logger.debug('STREAMING_MANAGER', `Stream ${streamId} controller closed successfully`)
+      } else {
+        logger.debug('STREAMING_MANAGER', `Stream ${streamId} controller already closed`)
+      }
+    } catch (error) {
+      logger.warn('STREAMING_MANAGER', `Failed to close controller for stream ${streamId}: ${error}`)
+    }
+
     this.cleanupStream(streamId)
   }
 

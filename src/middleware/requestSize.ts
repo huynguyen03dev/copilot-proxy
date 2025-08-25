@@ -408,7 +408,7 @@ export const TEST_LIMITS: RequestSizeLimits = {
  */
 export const PRODUCTION_LIMITS: RequestSizeLimits = {
   maxBodySize: 5 * 1024 * 1024, // 5MB for production
-  maxJsonDepth: 8,
+  maxJsonDepth: 12, // Increased from 8 to accommodate Claude Code Router (9 levels) with safety margin
   maxArrayLength: 5000,
   maxStringLength: 512 * 1024 // 512KB
 }

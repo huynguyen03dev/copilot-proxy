@@ -28,6 +28,7 @@ const LoggingConfigSchema = z.object({
   enableTimestamps: z.boolean().default(false),
   enableCategories: z.boolean().default(true),
   chunkLogFrequency: z.number().min(0).default(0), // 0 = adaptive
+  enableProgressLogs: z.boolean().default(true), // Enable streaming progress logs
   enableProgressLogs: z.boolean().default(true),
   enableEndpointLogs: z.boolean().default(true),
   enableModelLogs: z.boolean().default(true),
@@ -125,6 +126,7 @@ function parseEnvironmentConfig(): Config {
       enableCategories: parseBoolean(env.LOG_CATEGORIES, true),
       chunkLogFrequency: parseInteger(env.CHUNK_LOG_FREQUENCY, 0),
       enableProgressLogs: parseBoolean(env.ENABLE_PROGRESS_LOGS, true),
+      enableProgressLogs: parseBoolean(env.ENABLE_PROGRESS_LOGS, true),
       enableEndpointLogs: parseBoolean(env.ENABLE_ENDPOINT_LOGS, true),
       enableModelLogs: parseBoolean(env.ENABLE_MODEL_LOGS, true),
       enableMemoryLogs: parseBoolean(env.ENABLE_MEMORY_LOGS, true),
@@ -176,6 +178,7 @@ function createConfig(): Config {
       validatedConfig.server.maxConcurrentStreams = Math.max(validatedConfig.server.maxConcurrentStreams, 200)
       validatedConfig.streaming.rateLimitInterval = Math.min(validatedConfig.streaming.rateLimitInterval, 500)
       validatedConfig.logging.level = validatedConfig.logging.level === 'debug' ? 'info' : validatedConfig.logging.level
+      validatedConfig.logging.enableProgressLogs = false // Disable progress logs in production to reduce I/O overhead
       validatedConfig.monitoring.enableGarbageCollection = true
       validatedConfig.performance.enableCompression = true
       validatedConfig.performance.cacheHeaders = true

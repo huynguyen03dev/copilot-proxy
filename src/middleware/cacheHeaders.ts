@@ -18,6 +18,7 @@ export interface CacheConfig {
   enableVaryHeaders: boolean
   cacheableContentTypes: string[]
   nonCacheableEndpoints: string[]
+  etagSafeEndpoints: string[] // endpoints safe for ETag generation (uncompressed, small responses)
 }
 
 export interface CacheStats {
@@ -173,6 +174,10 @@ export function cacheHeadersMiddleware(config: Partial<CacheConfig> = {}) {
       '/metrics',
       '/health'
     ],
+    etagSafeEndpoints: [
+      '/',
+      '/v1/models'
+    ],
     ...config
   }
 
@@ -241,23 +246,43 @@ export function cacheHeadersMiddleware(config: Partial<CacheConfig> = {}) {
 
     // Add ETag if enabled
     if (finalConfig.enableETags) {
-      try {
-        const body = await response.text()
-        const etag = generateETag(body)
-        headers.set('ETag', etag)
-        
-        cacheStats.trackETagGeneration()
-        
-        logger.debug('CACHE', `Generated ETag for ${path}: ${etag}`)
+      // Skip ETag generation if response is compressed or streaming
+      const contentEncoding = response.headers.get('content-encoding')
+      const contentType = response.headers.get('content-type') || ''
+      const isStreamingResponse = contentType.includes('text/event-stream')
 
-        // Recreate response with the body and new headers
-        c.res = new Response(body, {
+      // Only generate ETags for safe, uncompressed responses on allowlisted endpoints
+      const isSafeEndpoint = finalConfig.etagSafeEndpoints.some(endpoint =>
+        path === endpoint || path.startsWith(endpoint)
+      )
+
+      if (!contentEncoding && !isStreamingResponse && isSafeEndpoint) {
+        try {
+          const body = await response.text()
+          const etag = generateETag(body)
+          headers.set('ETag', etag)
+
+          cacheStats.trackETagGeneration()
+
+          logger.debug('CACHE', `Generated ETag for ${path}: ${etag}`)
+
+          // Recreate response with the body and new headers
+          c.res = new Response(body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers
+          })
+        } catch (error) {
+          logger.warn('CACHE', `Failed to generate ETag for ${path}: ${error}`)
+        }
+      } else {
+        // Skip ETag generation but still update headers
+        logger.debug('CACHE', `Skipping ETag for ${path}: compressed=${!!contentEncoding}, streaming=${isStreamingResponse}, safe=${isSafeEndpoint}`)
+        c.res = new Response(c.res.body, {
           status: response.status,
           statusText: response.statusText,
           headers
         })
-      } catch (error) {
-        logger.warn('CACHE', `Failed to generate ETag for ${path}: ${error}`)
       }
     }
 

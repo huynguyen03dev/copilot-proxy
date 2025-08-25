@@ -388,20 +388,40 @@ export interface CompressionConfig {
   enableForSSE: boolean
   trackStats: boolean
   algorithms: string[]
+  skipApiEndpoints: boolean // Skip compression for API JSON responses to avoid buffering
 }
 
 export const DEFAULT_COMPRESSION_CONFIG: CompressionConfig = {
-  threshold: 1024, // 1KB minimum
+  threshold: 6144, // 6KB minimum - avoid compression overhead on small responses
   enableForSSE: false, // Disable for SSE to prevent streaming issues
   trackStats: true,
-  algorithms: ['gzip', 'deflate']
+  algorithms: ['gzip', 'deflate'],
+  skipApiEndpoints: false // Allow compression for API endpoints in development
 }
 
 export const PRODUCTION_COMPRESSION_CONFIG: CompressionConfig = {
-  threshold: 512, // 512 bytes minimum for production
+  threshold: 4096, // 4KB minimum for production - balance between efficiency and overhead
   enableForSSE: false, // Disable for SSE to prevent streaming issues
   trackStats: true,
-  algorithms: ['gzip', 'deflate']
+  algorithms: ['gzip', 'deflate'],
+  skipApiEndpoints: true // Skip compression for API endpoints to avoid buffering overhead
+}
+
+/**
+ * Detect if this is an API endpoint that should skip compression
+ */
+function isApiEndpoint(path: string): boolean {
+  // Common API endpoint patterns that typically return small JSON responses
+  const apiPatterns = [
+    '/v1/',           // OpenAI-style API endpoints
+    '/api/',          // Generic API endpoints
+    '/auth/',         // Authentication endpoints
+    '/health',        // Health check endpoints
+    '/metrics',       // Metrics endpoints
+    '/status'         // Status endpoints
+  ]
+
+  return apiPatterns.some(pattern => path.startsWith(pattern) || path === pattern.slice(0, -1))
 }
 
 /**
@@ -447,6 +467,15 @@ export function compressionMiddleware(config: Partial<CompressionConfig> = {}) {
     if (isStreamingResponse(c)) {
       if (finalConfig.trackStats) {
         logger.debug('COMPRESSION', `Skipping compression for streaming response: ${c.req.path}`)
+      }
+      return
+    }
+
+    // PERFORMANCE OPTIMIZATION: Skip compression for API endpoints to avoid buffering
+    // Small JSON responses don't benefit much from compression and add CPU overhead
+    if (finalConfig.skipApiEndpoints && isApiEndpoint(c.req.path)) {
+      if (finalConfig.trackStats) {
+        logger.debug('COMPRESSION', `Skipping compression for API endpoint: ${c.req.path}`)
       }
       return
     }
@@ -518,11 +547,21 @@ export function compressionMiddleware(config: Partial<CompressionConfig> = {}) {
         })
 
         if (finalConfig.trackStats) {
-          logger.info('COMPRESSION',
-            `${algorithm.toUpperCase()}: ${originalSize} → ${compressedBuffer.length} bytes ` +
-            `(${(compressedBuffer.length / originalSize * 100).toFixed(1)}% of original, ` +
-            `${((1 - compressedBuffer.length / originalSize) * 100).toFixed(1)}% savings)`
-          )
+          // PERFORMANCE OPTIMIZATION: Reduce logging verbosity under load
+          // Sample compression logs to avoid I/O overhead - log every 10th compression
+          if (Math.random() < 0.1) {
+            logger.info('COMPRESSION',
+              `${algorithm.toUpperCase()}: ${originalSize} → ${compressedBuffer.length} bytes ` +
+              `(${(compressedBuffer.length / originalSize * 100).toFixed(1)}% of original, ` +
+              `${((1 - compressedBuffer.length / originalSize) * 100).toFixed(1)}% savings)`
+            )
+          } else {
+            logger.debug('COMPRESSION',
+              `${algorithm.toUpperCase()}: ${originalSize} → ${compressedBuffer.length} bytes ` +
+              `(${(compressedBuffer.length / originalSize * 100).toFixed(1)}% of original, ` +
+              `${((1 - compressedBuffer.length / originalSize) * 100).toFixed(1)}% savings)`
+            )
+          }
         }
       } else {
         // Compression didn't help, use original response
