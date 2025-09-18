@@ -21,6 +21,10 @@ export interface ConnectionPoolConfig {
   headersTimeout: number
   enableCircuitBreaker: boolean
   circuitBreakerConfig?: Partial<CircuitBreakerConfig>
+  // Queue bounds to prevent unbounded growth
+  maxQueueSize: number
+  // Maximum time a request may wait in queue before failing fast
+  queueTimeoutMs: number
 }
 
 export interface PoolStats {
@@ -73,6 +77,9 @@ export class ConnectionPoolManager {
         recoveryTimeout: 30000,
         timeout: 15000
       },
+      // New safeguards
+      maxQueueSize: 200,    // ~2x maxConcurrentRequests per origin
+      queueTimeoutMs: 5000, // fail fast under overload
       ...config
     }
 
@@ -137,10 +144,25 @@ export class ConnectionPoolManager {
 
     // Slow path: must wait in queue
     const startWaitTime = Date.now()
+    const queue = this.waitQueues.get(origin) || []
 
-    return new Promise<void>((resolve) => {
-      const queue = this.waitQueues.get(origin) || []
-      queue.push({ resolve, timestamp: startWaitTime })
+    // Enforce queue bounds
+    if (queue.length >= this.config.maxQueueSize) {
+      throw new Error('QUEUE_SATURATED')
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('QUEUE_TIMEOUT'))
+      }, this.config.queueTimeoutMs)
+
+      queue.push({
+        resolve: () => {
+          clearTimeout(timeout)
+          resolve()
+        },
+        timestamp: startWaitTime
+      })
       this.waitQueues.set(origin, queue)
 
       logger.debug('CONNECTION_POOL', `Request queued for ${origin}, queue length: ${queue.length}`)

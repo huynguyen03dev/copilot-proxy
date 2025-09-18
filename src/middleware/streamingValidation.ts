@@ -392,7 +392,7 @@ export interface CompressionConfig {
 }
 
 export const DEFAULT_COMPRESSION_CONFIG: CompressionConfig = {
-  threshold: 6144, // 6KB minimum - avoid compression overhead on small responses
+  threshold: 24 * 1024, // 24KB — reduce recompression costs for medium responses
   enableForSSE: false, // Disable for SSE to prevent streaming issues
   trackStats: true,
   algorithms: ['gzip', 'deflate'],

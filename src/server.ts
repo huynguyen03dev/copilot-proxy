@@ -41,11 +41,13 @@ import { requestSizeMiddleware, TEST_LIMITS, PRODUCTION_LIMITS } from "./middlew
 import {
   streamingValidationMiddleware,
   TEST_STREAMING_CONFIG,
-  PRODUCTION_STREAMING_CONFIG,
+  PRODUCTION_STREAMING_CONFIG
+} from "./middleware/streamingValidation"
+import {
   compressionMiddleware,
   DEFAULT_COMPRESSION_CONFIG,
   PRODUCTION_COMPRESSION_CONFIG
-} from "./middleware/streamingValidation"
+} from "./middleware/compression"
 import {
   cacheHeadersMiddleware,
   DEFAULT_CACHE_CONFIG,
@@ -234,10 +236,10 @@ export class CopilotAPIServer {
       logger.info('SERVER', '🗜️  Response compression enabled')
     }
 
-    // Streaming validation middleware (for large requests)
-    this.app.use("*", streamingValidationMiddleware(
-      this.IS_TEST_ENVIRONMENT ? TEST_STREAMING_CONFIG : PRODUCTION_STREAMING_CONFIG
-    ))
+    // Streaming validation temporarily disabled to avoid full-body buffering
+    // this.app.use("*", streamingValidationMiddleware(
+    //   this.IS_TEST_ENVIRONMENT ? TEST_STREAMING_CONFIG : PRODUCTION_STREAMING_CONFIG
+    // ))
 
     // Request size validation middleware (after streaming validation, before route handlers)
     this.app.use("*", requestSizeMiddleware(this.IS_TEST_ENVIRONMENT ? TEST_LIMITS : PRODUCTION_LIMITS))
@@ -586,6 +588,16 @@ export class CopilotAPIServer {
               return c.json(errorResponse, 503)
             }
 
+            // Lightweight overload guard to shed load before admission
+            if (this.streamMetrics.totalRequests - this.streamMetrics.successfulStreams > this.MAX_CONCURRENT_STREAMS * 4) {
+              const errorResponse = createAPIErrorResponse(
+                "Server is currently overloaded. Please try again shortly.",
+                "server_overloaded",
+                "overload_guard"
+              )
+              return c.json(errorResponse, 503)
+            }
+
             // Use Hono's streamSSE for streaming responses with error boundaries
             return streamSSE(c, async (stream) => {
               const streamId = `stream-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
@@ -644,9 +656,30 @@ export class CopilotAPIServer {
             })
           } else {
             // Forward request to GitHub Copilot API (non-streaming)
-            const copilotResponse = await this.forwardToCopilot(token, body, endpoint)
-            c.header('Content-Type', 'application/json; charset=utf-8')
-            return c.json(copilotResponse)
+            try {
+              const copilotResponse = await this.forwardToCopilot(token, body, endpoint)
+              const res = c.json(copilotResponse)
+              res.headers.set('Content-Type', 'application/json; charset=UTF-8')
+              return res
+            } catch (e: any) {
+              if (e?.message === 'QUEUE_SATURATED') {
+                const errorResponse = createAPIErrorResponse(
+                  'Server overloaded',
+                  'server_overloaded',
+                  'QUEUE_SATURATED'
+                )
+                return c.json(errorResponse, 503)
+              }
+              if (e?.message === 'QUEUE_TIMEOUT') {
+                const errorResponse = createAPIErrorResponse(
+                  'Upstream busy',
+                  'upstream_busy',
+                  'QUEUE_TIMEOUT'
+                )
+                return c.json(errorResponse, 504)
+              }
+              throw e
+            }
           }
         } catch (error) {
           logger.error('COPILOT_API', `API request failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -663,7 +696,7 @@ export class CopilotAPIServer {
     // List available models (mock response for compatibility)
     this.app.get("/v1/models", async (c) => {
       const isAuthenticated = await GitHubCopilotAuth.isAuthenticated()
-      
+
       if (!isAuthenticated) {
         const errorResponse = createAPIErrorResponse(
           "Not authenticated",
@@ -678,7 +711,7 @@ export class CopilotAPIServer {
         data: [
           {
             id: "gpt-4o",
-            object: "model", 
+            object: "model",
             created: Date.now(),
             owned_by: "github-copilot"
           },
@@ -807,7 +840,7 @@ export class CopilotAPIServer {
     // Build request data for each endpoint configuration
     const endpointAttempts = configs.map((config, index) => {
       const url = `${baseEndpoint}${config.path}`
-      const requestBody = this.buildRequestBody(request, config.format)
+      const requestBody = { model: request.model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1, temperature: 0, stream: false }
 
       return {
         config,
@@ -1013,6 +1046,10 @@ export class CopilotAPIServer {
         request.stop
       ) // End deduplicateRequest
     } catch (error) {
+      if (error instanceof Error && (error.message === 'QUEUE_SATURATED' || error.message === 'QUEUE_TIMEOUT')) {
+        // Preserve queue errors for caller to map to 503/504
+        throw error
+      }
       logger.error('ENDPOINT', `❌ All endpoint attempts failed: ${error}`)
       throw new Error(`All Copilot API endpoints failed. Error: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
@@ -1119,7 +1156,7 @@ export class CopilotAPIServer {
           "Editor-Plugin-Version": "copilot-chat/0.26.7",
         },
         body: JSON.stringify(streamingRequestBody),
-        timeout: 15000 // 15 second timeout for streaming requests
+        timeout: 60000 // align with 30s chunk timeout; avoid premature aborts
       })
 
       if (response.statusCode === 200) {

@@ -257,23 +257,35 @@ export function cacheHeadersMiddleware(config: Partial<CacheConfig> = {}) {
       )
 
       if (!contentEncoding && !isStreamingResponse && isSafeEndpoint) {
-        try {
-          const body = await response.text()
-          const etag = generateETag(body)
-          headers.set('ETag', etag)
-
-          cacheStats.trackETagGeneration()
-
-          logger.debug('CACHE', `Generated ETag for ${path}: ${etag}`)
-
-          // Recreate response with the body and new headers
-          c.res = new Response(body, {
+        // Guard by size: skip ETag for large/unknown bodies
+        const contentLengthHeader = response.headers.get('content-length')
+        const len = contentLengthHeader ? Number(contentLengthHeader) : NaN
+        if (!Number.isFinite(len) || len > 32 * 1024) {
+          logger.debug('CACHE', `Skipping ETag due to size guard: len=${contentLengthHeader || 'unknown'}`)
+          c.res = new Response(c.res.body, {
             status: response.status,
             statusText: response.statusText,
             headers
           })
-        } catch (error) {
-          logger.warn('CACHE', `Failed to generate ETag for ${path}: ${error}`)
+        } else {
+          try {
+            const body = await response.text()
+            const etag = generateETag(body)
+            headers.set('ETag', etag)
+
+            cacheStats.trackETagGeneration()
+
+            logger.debug('CACHE', `Generated ETag for ${path}: ${etag}`)
+
+            // Recreate response with the body and new headers
+            c.res = new Response(body, {
+              status: response.status,
+              statusText: response.statusText,
+              headers
+            })
+          } catch (error) {
+            logger.warn('CACHE', `Failed to generate ETag for ${path}: ${error}`)
+          }
         }
       } else {
         // Skip ETag generation but still update headers
