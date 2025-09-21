@@ -90,6 +90,8 @@ import { connectionPool } from "./utils/connectionPool"
 import { streamingManager } from "./utils/streamingManager"
 import { responseCache } from "./utils/responseCache"
 
+import { serve } from "@hono/node-server"
+
 export class CopilotAPIServer {
   private app: Hono
   private port: number
@@ -2317,8 +2319,8 @@ export class CopilotAPIServer {
    * Start the server with HTTP/1.1 and optional HTTP/2 support
    */
   async start(): Promise<void> {
-    // Start HTTP/1.1 server (Bun)
-    const server = Bun.serve({
+    // Start HTTP/1.1 server (Node via @hono/node-server)
+    const server = serve({
       port: this.port,
       hostname: this.hostname,
       fetch: this.app.fetch,
@@ -2350,8 +2352,8 @@ export class CopilotAPIServer {
     console.log(`🛑 Initiating graceful shutdown...`)
 
     // Stop accepting new connections
-    if (this.server) {
-      this.server.stop()
+    if (this.server && "close" in this.server) {
+      await new Promise<void>((resolve) => this.server.close(() => resolve()))
     }
 
     // HTTP/1.1 server stopped

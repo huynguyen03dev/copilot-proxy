@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
 import { CopilotAPIServer } from "./server"
 import { GitHubCopilotAuth } from "./auth"
@@ -30,7 +30,7 @@ if (helpArg) {
   console.log(`
 GitHub Copilot API Server
 
-Usage: bun run src/index.ts [options]
+Usage: copilot-server [options]
 
 Options:
   --port=<number>     Port to listen on (current: ${port}, default: 8069)
@@ -45,11 +45,11 @@ Environment Variables:
   HOSTNAME            Server hostname (current: ${hostname})
 
 Examples:
-  bun run src/index.ts                    # Start server with .env settings
-  bun run src/index.ts --port=8080        # Override port via command line
-  PORT=3000 bun run src/index.ts          # Override port via environment
-  bun run src/index.ts --auth             # Authenticate with GitHub Copilot
-  bun run src/index.ts --clear-auth       # Clear authentication
+  copilot-server                          # Start server with .env settings
+  copilot-server --port=8080              # Override port via command line
+  PORT=3000 copilot-server                # Override port via environment
+  copilot-server --auth                   # Authenticate with GitHub Copilot
+  copilot-server --clear-auth             # Clear authentication
 
 API Endpoints:
   GET  /                                  # Health check
@@ -61,15 +61,15 @@ API Endpoints:
   GET  /v1/models                        # List available models
 
 Authentication Flow:
-  1. Run: bun run auth (or bun run src/index.ts --auth)
+  1. Run: copilot-server --auth
   2. Visit the provided GitHub URL (opens automatically if possible)
   3. Enter the user code shown in the terminal
   4. Wait for confirmation (up to 15 minutes)
-  5. Start the server: bun run start
+  5. Start the server: copilot-server
   6. Use the API with any OpenAI-compatible client
 
 Troubleshooting Authentication:
-  • If authentication fails: bun run clear-auth && bun run auth
+  • If authentication fails: copilot-server --clear-auth && copilot-server --auth
   • Check GitHub Copilot subscription is active
   • Ensure stable internet connection
   • Authentication expires after 15 minutes - retry if needed
@@ -83,7 +83,7 @@ async function handleAuth() {
 
     if (result.success) {
       console.log("\n🎉 Authentication completed successfully!")
-      console.log("You can now start the server with: bun run start")
+      console.log("You can now start the server with: copilot-server")
       process.exit(0)
     } else {
       console.log("\n❌ Authentication failed")
@@ -115,8 +115,8 @@ async function handleAuth() {
           break
         default:
           console.log("\n💡 Suggestions:")
-          console.log("   • Try running: bun run clear-auth")
-          console.log("   • Then run: bun run auth")
+          console.log("   • Try running: copilot-server --clear-auth")
+          console.log("   • Then run: copilot-server --auth")
           console.log("   • Make sure you have a valid GitHub Copilot subscription")
       }
 
@@ -124,7 +124,7 @@ async function handleAuth() {
     }
   } catch (error) {
     console.error("❌ Failed to start authentication:", error)
-    console.log("\n💡 Try running: bun run clear-auth && bun run auth")
+    console.log("\n💡 Try running: copilot-server --clear-auth && copilot-server --auth")
     process.exit(1)
   }
 }
@@ -144,9 +144,8 @@ async function startServer() {
     if (!isAuthenticated) {
       console.log("⚠️  Not authenticated with GitHub Copilot")
       console.log("\n💡 Quick options:")
-      console.log("   • For seamless authentication: bun run src/index.ts --auto-auth")
-      console.log("   • For manual authentication: bun run src/index.ts --auth")
-      console.log("   • Or use the startup scripts: ./start.sh or start.bat")
+      console.log("   • For seamless authentication: copilot-server --auto-auth")
+      console.log("   • For manual authentication: copilot-server --auth")
       console.log("\n⚠️  Server will start but API calls will fail without authentication\n")
     } else {
       console.log("✅ Authenticated with GitHub Copilot")
@@ -161,13 +160,15 @@ async function startServer() {
   await server.start()
 
   // Handle graceful shutdown
-  process.on("SIGINT", () => {
+  process.on("SIGINT", async () => {
     console.log("\n👋 Shutting down server...")
+    await server.shutdown()
     process.exit(0)
   })
 
-  process.on("SIGTERM", () => {
+  process.on("SIGTERM", async () => {
     console.log("\n👋 Shutting down server...")
+    await server.shutdown()
     process.exit(0)
   })
 }
@@ -189,7 +190,7 @@ async function handleAutoAuth() {
         if (result.errorDescription) {
           console.error("   Details:", result.errorDescription)
         }
-        console.log("\n💡 You can try manual authentication with: bun run auth")
+        console.log("\n💡 You can try manual authentication with: copilot-server --auth")
         process.exit(1)
       }
     }
@@ -199,7 +200,7 @@ async function handleAutoAuth() {
     await startServer()
   } catch (error) {
     console.error("❌ Failed to start with auto-authentication:", error)
-    console.log("\n💡 Try manual authentication: bun run auth")
+    console.log("\n💡 Try manual authentication: copilot-server --auth")
     process.exit(1)
   }
 }

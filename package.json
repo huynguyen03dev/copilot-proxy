@@ -2,12 +2,18 @@
   "name": "vscode-copilot-api-server",
   "version": "1.0.0",
   "description": "Local API server that exposes GitHub Copilot as OpenAI-compatible endpoint",
-  "main": "src/index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": { "copilot-server": "bin/cli.js" },
+
+
   "type": "module",
   "scripts": {
-    "dev": "bun run --watch src/index.ts",
-    "start": "bun run src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "dev": "node --watch dist/index.js",
+    "start": "node dist/index.js",
+    "build": "tsup src/index.ts --format esm --sourcemap --out-dir dist --clean",
+    "prepublishOnly": "npm run build",
+
     "type-check": "tsc --noEmit",
     "test": "bun test",
     "test:unit": "bun test tests/unit/",
@@ -30,15 +36,20 @@
     "clear-auth": "bun run src/index.ts --clear-auth"
   },
   "dependencies": {
-    "hono": "^4.6.3",
-    "zod": "^3.23.8",
+    "@hono/node-server": "^1.19.3",
     "@hono/zod-validator": "^0.2.2",
-    "undici": "^6.19.8"
+    "hono": "^4.6.3",
+    "undici": "^6.19.8",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/node": "^24.5.2",
+    "tsup": "^8.5.0",
     "typescript": "^5.6.2"
   },
+  "engines": { "node": ">=18" },
+  "files": ["dist", "bin", "README.md", "LICENSE"],
+
   "keywords": [
     "github-copilot",
     "openai-api",
