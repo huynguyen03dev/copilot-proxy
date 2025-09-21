@@ -14,7 +14,7 @@
     "build": "tsup src/index.ts --format esm --sourcemap --out-dir dist --clean",
     "prepublishOnly": "npm run build",
 
-    "type-check": "tsc --noEmit",
+    "type-check": "tsc -p tsconfig.types.json --noEmit",
     "test": "bun test",
     "test:unit": "bun test tests/unit/",
     "test:security": "bun run tests/security/run-security-tests.ts",
