@@ -129,7 +129,6 @@ export class ContextualLogger {
    * Enhanced debug logging with context
    */
   debug(category: string, message: string, additionalContext?: LogContext): void {
-    if (!this.baseLogger.isLevelEnabled?.(LogLevel.DEBUG)) return
 
     const contextStr = this.serializeContext(additionalContext)
     this.baseLogger.debug(category, `${message}${contextStr}`)
@@ -139,7 +138,6 @@ export class ContextualLogger {
    * Enhanced info logging with context
    */
   info(category: string, message: string, additionalContext?: LogContext): void {
-    if (!this.baseLogger.isLevelEnabled?.(LogLevel.INFO)) return
 
     const contextStr = this.serializeContext(additionalContext)
     this.baseLogger.info(category, `${message}${contextStr}`)
@@ -149,7 +147,6 @@ export class ContextualLogger {
    * Enhanced warning logging with context
    */
   warn(category: string, message: string, additionalContext?: LogContext): void {
-    if (!this.baseLogger.isLevelEnabled?.(LogLevel.WARN)) return
 
     const contextStr = this.serializeContext(additionalContext)
     this.baseLogger.warn(category, `${message}${contextStr}`)
@@ -159,7 +156,6 @@ export class ContextualLogger {
    * Enhanced error logging with context
    */
   error(category: string, message: string, error?: Error, additionalContext?: LogContext): void {
-    if (!this.baseLogger.isLevelEnabled?.(LogLevel.ERROR)) return
 
     const errorContext = error ? {
       errorName: error.name,

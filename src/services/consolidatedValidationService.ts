@@ -406,31 +406,61 @@ export class ConsolidatedValidationService {
     // Validate HTTP method
     const methodValidation = this.validateHttpMethod(method, ['POST'])
     if (!methodValidation.success) {
-      return methodValidation
+      return {
+        success: false,
+        errors: methodValidation.errors,
+        errorResponse: methodValidation.errorResponse,
+        statusCode: methodValidation.statusCode,
+        metadata: methodValidation.metadata
+      }
     }
 
     // Validate content type
     const contentTypeValidation = this.validateContentType(contentType)
     if (!contentTypeValidation.success) {
-      return contentTypeValidation
+      return {
+        success: false,
+        errors: contentTypeValidation.errors,
+        errorResponse: contentTypeValidation.errorResponse,
+        statusCode: contentTypeValidation.statusCode,
+        metadata: contentTypeValidation.metadata
+      }
     }
 
     // Validate auth token
     const tokenValidation = this.validateAuthToken(authToken)
     if (!tokenValidation.success) {
-      return tokenValidation
+      return {
+        success: false,
+        errors: tokenValidation.errors,
+        errorResponse: tokenValidation.errorResponse,
+        statusCode: tokenValidation.statusCode,
+        metadata: tokenValidation.metadata
+      }
     }
 
     // Validate request body
     const bodyValidation = this.validateRequestBody(body)
     if (!bodyValidation.success) {
-      return bodyValidation
+      return {
+        success: false,
+        errors: bodyValidation.errors,
+        errorResponse: bodyValidation.errorResponse,
+        statusCode: bodyValidation.statusCode,
+        metadata: bodyValidation.metadata
+      }
     }
 
     // Validate chat completion request structure
     const requestValidation = this.validateChatCompletionRequest(bodyValidation.data)
     if (!requestValidation.success) {
-      return requestValidation
+      return {
+        success: false,
+        errors: requestValidation.errors,
+        errorResponse: requestValidation.errorResponse,
+        statusCode: requestValidation.statusCode,
+        metadata: requestValidation.metadata
+      }
     }
 
     logger.debug('CONSOLIDATED_VALIDATION', 'Full request validation completed', {

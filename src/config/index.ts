@@ -29,7 +29,6 @@ const LoggingConfigSchema = z.object({
   enableCategories: z.boolean().default(true),
   chunkLogFrequency: z.number().min(0).default(0), // 0 = adaptive
   enableProgressLogs: z.boolean().default(true), // Enable streaming progress logs
-  enableProgressLogs: z.boolean().default(true),
   enableEndpointLogs: z.boolean().default(true),
   enableModelLogs: z.boolean().default(true),
   enableMemoryLogs: z.boolean().default(true),
@@ -125,7 +124,6 @@ function parseEnvironmentConfig(): Config {
       enableTimestamps: parseBoolean(env.LOG_TIMESTAMPS, false),
       enableCategories: parseBoolean(env.LOG_CATEGORIES, true),
       chunkLogFrequency: parseInteger(env.CHUNK_LOG_FREQUENCY, 0),
-      enableProgressLogs: parseBoolean(env.ENABLE_PROGRESS_LOGS, true),
       enableProgressLogs: parseBoolean(env.ENABLE_PROGRESS_LOGS, true),
       enableEndpointLogs: parseBoolean(env.ENABLE_ENDPOINT_LOGS, true),
       enableModelLogs: parseBoolean(env.ENABLE_MODEL_LOGS, true),

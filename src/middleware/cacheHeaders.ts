@@ -373,6 +373,10 @@ export const DEFAULT_CACHE_CONFIG: CacheConfig = {
     '/auth/',
     '/metrics',
     '/health'
+  ],
+  etagSafeEndpoints: [
+    '/',
+    '/v1/models'
   ]
 }
 

@@ -248,7 +248,7 @@ export class StreamingManager {
   /**
    * Compress chunk using efficient algorithm (conservative approach)
    */
-  private async compressChunk(buffer: Buffer): Promise<Buffer> {
+  private async compressChunk(buffer: any): Promise<any> {
     try {
       const content = buffer.toString('utf8')
 
@@ -270,7 +270,7 @@ export class StreamingManager {
   /**
    * Optimize chunk content for streaming (conservative approach)
    */
-  private optimizeChunkContent(buffer: Buffer): Buffer {
+  private optimizeChunkContent(buffer: any): any {
     try {
       const content = buffer.toString('utf8')
 
@@ -278,7 +278,7 @@ export class StreamingManager {
       if (content.startsWith('data: ')) {
         // Only remove completely empty lines, preserve all data lines
         const lines = content.split('\n')
-        const optimizedLines = lines.filter(line => {
+        const optimizedLines = lines.filter((line: string) => {
           // Keep all non-empty lines and preserve structure
           return line.length > 0 || line === '' // Keep empty lines that might be important for SSE
         })

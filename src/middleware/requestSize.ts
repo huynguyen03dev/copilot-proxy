@@ -61,7 +61,7 @@ export function requestSizeMiddleware(limits: Partial<RequestSizeLimits> = {}) {
             "invalid_request_error",
             "request_too_large"
           )
-          return c.json(errorResponse, 413)
+          return c.json(errorResponse, { status: HTTP_STATUS.REQUEST_TOO_LARGE })
         }
       }
 
@@ -80,7 +80,7 @@ export function requestSizeMiddleware(limits: Partial<RequestSizeLimits> = {}) {
             const validationResult = await validateAndParseJsonSinglePass(c, finalLimits)
 
             if (!validationResult.success) {
-              return c.json(validationResult.errorResponse, validationResult.statusCode)
+              return c.json(validationResult.errorResponse, (validationResult.statusCode ?? HTTP_STATUS.BAD_REQUEST) as any)
             }
 
             // Store the parsed body for later use
@@ -102,7 +102,7 @@ export function requestSizeMiddleware(limits: Partial<RequestSizeLimits> = {}) {
             "internal_error",
             "validation_failed"
           )
-          return c.json(errorResponse, 500)
+          return c.json(errorResponse, { status: HTTP_STATUS.INTERNAL_SERVER_ERROR })
         }
       }
 
@@ -115,7 +115,7 @@ export function requestSizeMiddleware(limits: Partial<RequestSizeLimits> = {}) {
         "internal_error",
         "middleware_error"
       )
-      return c.json(errorResponse, 500)
+      return c.json(errorResponse, { status: HTTP_STATUS.INTERNAL_SERVER_ERROR })
     }
   }
 
@@ -429,13 +429,13 @@ export function createRequestSizeMiddleware(customLimits?: Partial<RequestSizeLi
           "Content-Length header is required",
           "invalid_request_error",
           "MISSING_CONTENT_LENGTH"
-        ), HTTP_STATUS.BAD_REQUEST)
+        ), { status: HTTP_STATUS.BAD_REQUEST })
       }
 
       // Validate content length using service
       const contentLengthResult = validationService.validateContentLength(contentLength)
       if (!contentLengthResult.success) {
-        return c.json(contentLengthResult.errorResponse, contentLengthResult.statusCode)
+        return c.json(contentLengthResult.errorResponse, (contentLengthResult.statusCode ?? HTTP_STATUS.BAD_REQUEST) as any)
       }
 
       // Get and validate request body
@@ -443,7 +443,7 @@ export function createRequestSizeMiddleware(customLimits?: Partial<RequestSizeLi
       const validationResult = await validationService.validateRequestBody(body)
 
       if (!validationResult.success) {
-        return c.json(validationResult.errorResponse, validationResult.statusCode)
+        return c.json(validationResult.errorResponse, (validationResult.statusCode ?? HTTP_STATUS.BAD_REQUEST) as any)
       }
 
       // Store parsed body for downstream use

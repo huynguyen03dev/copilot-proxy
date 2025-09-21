@@ -188,7 +188,7 @@ export class RequestValidationService {
       const totalTime = Date.now() - startTime
 
       // Log performance metrics for large requests
-      if (bodySize > PERFORMANCE_CONSTANTS.LARGE_REQUEST_THRESHOLD || totalTime > PERFORMANCE_CONSTANTS.SLOW_VALIDATION_MS) {
+      if (bodySize > SIZE_CONSTANTS.LARGE_REQUEST_THRESHOLD || totalTime > PERFORMANCE_CONSTANTS.SLOW_VALIDATION_MS) {
         logger.debug('REQUEST_VALIDATION',
           `Validation completed: ${bodySize} bytes in ${totalTime}ms ` +
           `(parse: ${jsonParseTime}ms, validate: ${validationTime}ms)`

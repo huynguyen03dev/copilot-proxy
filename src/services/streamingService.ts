@@ -11,10 +11,7 @@ import {
   ERROR_CODES,
   PERFORMANCE_CONSTANTS
 } from '../constants'
-import { 
-  ChatCompletionRequest, 
-  type EndpointAttempt 
-} from '../types'
+import { ChatCompletionRequest } from '../types'
 import { StreamingErrorBoundary } from '../utils/errorBoundary'
 import { connectionPool } from '../utils/connectionPool'
 import { endpointLogger } from '../utils/logger'
@@ -29,6 +26,8 @@ export interface StreamingEndpointConfig {
   path: string
   format: number
 }
+
+interface EndpointAttempt { url: string; status: number; error?: string }
 
 export interface StreamingServiceConfig {
   timeoutMs: number
@@ -74,13 +73,13 @@ export class StreamingService {
     try {
       // Discover optimal endpoint
       const streamingEndpoint = await this.discoverStreamingEndpoint(token, request, endpoint)
-      
+
       // Process streaming response
       await this.processStreamingResponse(streamingEndpoint, token, request, stream, streamId)
-      
+
       clearTimeout(streamTimeout)
       logger.info('STREAMING_SERVICE', `Streaming request ${streamId} completed successfully`)
-      
+
     } catch (error) {
       clearTimeout(streamTimeout)
       const streamError = error instanceof Error ? error : new Error("Unknown streaming error")
@@ -106,7 +105,7 @@ export class StreamingService {
 
       try {
         const requestBody = this.buildStreamingRequestBody(request, config.format)
-        
+
         const response = await fetch(apiUrl, {
           method: "POST",
           headers: this.buildRequestHeaders(token),
@@ -118,10 +117,10 @@ export class StreamingService {
         if (response.ok) {
           // Log successful discovery
           endpointLogger.discovery(attempts, apiUrl)
-          
+
           // Warmup connections for performance
           await this.warmupConnections(apiUrl)
-          
+
           return apiUrl
         } else if (response.status === 404) {
           continue
@@ -297,7 +296,7 @@ export class StreamProcessor {
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
-    let buffer = Buffer.alloc(0)
+    let buffer = Buffer.alloc(0) as any
     let chunkCount = 0
     let isAborted = false
 
@@ -354,7 +353,7 @@ export class StreamProcessor {
   /**
    * Extract complete lines from buffer
    */
-  private extractCompleteLines(buffer: Buffer): { completeLines: string[]; remainingBuffer: Buffer } {
+  private extractCompleteLines(buffer: any): { completeLines: string[]; remainingBuffer: any } {
     const decoder = new TextDecoder()
     const text = decoder.decode(buffer)
     const lines = text.split('\n')

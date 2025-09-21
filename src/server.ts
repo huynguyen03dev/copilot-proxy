@@ -489,7 +489,7 @@ export class CopilotAPIServer {
       async (c) => {
         // PERFORMANCE OPTIMIZATION: Use already-parsed body from requestSize middleware
         // This eliminates double JSON parsing (requestSize + zValidator)
-        const parsedBody = c.get('parsedBody') as any
+        const parsedBody = (c as any).get('parsedBody') as any
 
         if (!parsedBody) {
           const errorResponse = createAPIErrorResponse(
@@ -1300,8 +1300,8 @@ export class CopilotAPIServer {
         lastActivityTime = Date.now()
 
         // Process complete lines from buffer
-        const { completeLines, remainingBuffer } = this.extractCompleteLines(buffer)
-        buffer = remainingBuffer
+        const { completeLines, remainingBuffer } = this.extractCompleteLines(buffer as any)
+        buffer = remainingBuffer as any
 
         for (const line of completeLines) {
           if (line.startsWith('data: ')) {

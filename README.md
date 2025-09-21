@@ -17,7 +17,7 @@ A local API server that exposes GitHub Copilot as an OpenAI-compatible endpoint 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- [Bun](https://bun.sh/) runtime
+- Node.js 18+
 - Active GitHub Copilot subscription
 - Basic understanding of APIs and authentication
 
@@ -25,7 +25,7 @@ A local API server that exposes GitHub Copilot as an OpenAI-compatible endpoint 
 ```bash
 git clone <repository>
 cd vscode-api-server
-bun install
+npm ci
 ```
 
 ### One-Click Startup
@@ -35,11 +35,11 @@ bun install
 **Or manually:**
 ```bash
 # Authenticate and start in one command
-bun run src/index.ts --auto-auth
+copilot-server --auto-auth
 
 # Or step by step
-bun run auth        # Authenticate with GitHub
-bun run start       # Start the server
+copilot-server --auth   # Authenticate with GitHub
+copilot-server          # Start the server
 ```
 
 Server runs on `http://localhost:8069` by default.
@@ -103,9 +103,8 @@ ENABLE_CONNECTION_POOLING=true  # HTTP connection pooling (recommended)
 ## 🛠️ Development
 
 ```bash
-bun run dev          # Development with auto-reload
-bun run build        # Build optimized bundle
-bun run type-check   # TypeScript validation
+npm run build        # Build optimized bundle
+npm run type-check   # TypeScript validation
 bun test             # Run all tests
 bun run test:unit    # Unit tests only
 ```
@@ -133,12 +132,12 @@ bun run test:unit    # Unit tests only
 **Authentication Issues:**
 ```bash
 # Clear and re-authenticate
-bun run clear-auth
-bun run auth
+copilot-server --clear-auth
+copilot-server --auth
 ```
 
 **Common Problems:**
-- **"Not authenticated"** → Run `bun run auth`
+- **"Not authenticated"** → Run `copilot-server --auth`
 - **"Connection refused"** → Check if server is running
 - **"Token expired"** → Server auto-refreshes, or re-authenticate
 

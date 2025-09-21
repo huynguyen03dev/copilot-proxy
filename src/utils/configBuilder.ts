@@ -25,8 +25,8 @@ export function buildConfig<T extends BaseConfig>(
   environmentOverrides: EnvironmentOverrides<T> = {},
   userConfig: Partial<T> = {}
 ): T {
-  const env = (process.env.NODE_ENV as keyof typeof ENVIRONMENTS) || ENVIRONMENTS.DEVELOPMENT
-  const envOverrides = environmentOverrides[env] || {}
+  const env = (process.env.NODE_ENV as string) || ENVIRONMENTS.DEVELOPMENT
+  const envOverrides = environmentOverrides[env as keyof EnvironmentOverrides<T>] || {}
   
   return {
     ...defaultConfig,
@@ -132,10 +132,10 @@ export function mergeConfigs<T extends Record<string, any>>(
           !Array.isArray(result[key])
         ) {
           // Deep merge for nested objects
-          result[key] = mergeConfigs(result[key], value)
+          (result as Record<string, any>)[key] = mergeConfigs((result as Record<string, any>)[key], value as any)
         } else {
           // Direct assignment for primitives, arrays, and null values
-          result[key] = value
+          (result as Record<string, any>)[key] = value as any
         }
       }
     }

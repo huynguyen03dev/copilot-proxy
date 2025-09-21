@@ -4,10 +4,10 @@
  */
 
 import { Context, Next } from "hono"
-import { 
-  getCircuitBreakerManager,
-  CircuitBreakerConfig 
+import {
+  getCircuitBreakerManager
 } from "../utils/circuitBreakerManager"
+import type { CircuitBreakerConfig } from "../utils/circuitBreaker"
 import { logger } from "../utils/logger"
 import { getAsyncLogger } from "../utils/asyncLogger"
 
@@ -158,7 +158,7 @@ async function handleCircuitBreakerError(
   const asyncLogger = getAsyncLogger()
   
   // Log the circuit breaker error
-  await asyncLogger.errorAsync(
+  await asyncLogger.logErrorAsync(
     error,
     'CIRCUIT_BREAKER_MIDDLEWARE',
     { correlationId: c.get('correlationId') },

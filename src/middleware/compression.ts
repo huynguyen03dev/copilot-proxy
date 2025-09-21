@@ -106,7 +106,7 @@ export function compressionMiddleware(config: Partial<CompressionConfig> = {}) {
         headers.set('content-length', compressedBuffer.length.toString())
         headers.set('vary', 'Accept-Encoding')
 
-        c.res = new Response(compressedBuffer, { status: c.res.status, statusText: c.res.statusText, headers })
+        c.res = new Response(new Uint8Array(compressedBuffer as any), { status: c.res.status, statusText: c.res.statusText, headers })
 
         if (finalConfig.trackStats) {
           if (Math.random() < 0.1) {

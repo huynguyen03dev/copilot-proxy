@@ -5,11 +5,8 @@
 
 import { Pool, request } from 'undici'
 import { logger } from './logger'
-import {
-  getCircuitBreakerManager,
-  executeWithCircuitBreaker,
-  CircuitBreakerConfig
-} from './circuitBreakerManager'
+import { executeWithCircuitBreaker } from './circuitBreakerManager'
+import type { CircuitBreakerConfig } from './circuitBreaker'
 
 export interface ConnectionPoolConfig {
   maxConnections: number

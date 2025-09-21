@@ -261,7 +261,7 @@ export class ValidationUtils {
       if (!elementValidator(value[i])) {
         return { isValid: false, error: `${fieldName}[${i}] is invalid` }
       }
-      validatedItems.push(value[i])
+      validatedItems.push(value[i] as T)
     }
 
     return { isValid: true, validatedArray: validatedItems }
@@ -348,7 +348,7 @@ export class AsyncUtils {
    */
   static withTimeout<T>(
     promise: Promise<T>,
-    timeoutMs: number = TIMEOUT_CONSTANTS.DEFAULT_TIMEOUT_MS,
+    timeoutMs: number = TIMEOUT_CONSTANTS.OPERATION_TIMEOUT_MS,
     errorMessage: string = 'Operation timed out'
   ): Promise<T> {
     const timeoutPromise = new Promise<never>((_, reject) => {
