@@ -6,9 +6,6 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# Bun specific
-bun.lockb
-.bun/
 
 # Build output
 dist/

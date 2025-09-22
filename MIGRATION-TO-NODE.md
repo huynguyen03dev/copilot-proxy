@@ -249,23 +249,6 @@ Potential follow-ups (optional):
 
 ---
 
-## 6) Rollback Instructions
-
-If you need to revert to Bun-based runtime quickly:
-
-- [ ] Revert `src/server.ts` start to `Bun.serve({ fetch, port, hostname })`
-- [ ] Restore shebang to `#!/usr/bin/env bun` if you changed it
-- [ ] Restore `package.json` scripts:
-  - `"build": "bun build src/index.ts --outdir dist --target bun"`
-  - `"start": "bun run src/index.ts"`
-- [ ] Restore Bun types (`@types/bun`) and tsconfig `"types": ["bun-types"]`
-- [ ] If bin points to Node wrapper, point it back to a Bun wrapper if desired
-- [ ] If you added a bundler (e.g., `tsup`): optionally remove it from `devDependencies` and restore the original `build` script, or leave it unused.
-
-
-Using Git, a single revert of the migration commit (or branch reset) will restore the previous Bun-based state.
-
----
 
 ## 7) Checklist Summary
 

@@ -105,8 +105,7 @@ ENABLE_CONNECTION_POOLING=true  # HTTP connection pooling (recommended)
 ```bash
 npm run build        # Build optimized bundle
 npm run type-check   # TypeScript validation
-bun test             # Run all tests
-bun run test:unit    # Unit tests only
+npm test             # Run all Node tests
 ```
 
 ## 🔒 Security & Disclaimers

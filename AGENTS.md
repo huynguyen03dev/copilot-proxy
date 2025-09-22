@@ -2,17 +2,13 @@
 
 ## Build, Lint, and Test Commands
 
-- **Build:** `bun build src/index.ts --outdir dist --target bun`
-- **Start (dev):** `bun run --watch src/index.ts`
+- **Build:** `npm run build` (tsup bundling to dist/)
+- **Start (dev):** `node --watch dist/index.js`
 
-- **Type Check:** `tsc --noEmit`
+- **Type Check:** `npm run type-check`
 - **Lint:** _No explicit lint script; use TypeScript strictness and formatting guidelines below._
-- **Test all:** `bun test`
-- **Test unit:** `bun test tests/unit/`
-- **Test integration:** `bun run tests/integration/run-integration-tests.ts`
-- **Test security:** `bun run tests/security/run-security-tests.ts`
-- **Test single file:** `bun test <path/to/testfile>`
-- **Test with coverage:** `bun test --coverage`
+- **Test all:** `npm test` (Node's built-in test runner)
+- **Test single file:** `node --test <path/to/testfile>`
 - **Python tests:** `python scripts/tests/test.py` (streaming), `python scripts/performance-test.py` (performance)
 
 ## Code Style Guidelines
@@ -37,7 +33,7 @@
     logger.error("ENDPOINT", "Failed to reach endpoint", { url, error })
     ```
 - **Validation:** Use Zod schemas for runtime validation of inputs and errors.
-- **Tests:** Use Bun’s test runner. Mock external dependencies. Restore global state after each test.
+- **Tests:** Use Node’s built-in test runner (`node --test`) or a framework like Vitest/Jest. Mock external dependencies. Restore global state after each test.
 - **Configuration:** Store secrets and config in `.env.*` files. Validate config before starting server.
 - **Comments:** Use JSDoc for public APIs and complex logic.
 - **File Structure:** Keep middleware, utils, types, and config in their respective folders. Tests should mirror source structure.

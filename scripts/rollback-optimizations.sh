@@ -32,15 +32,15 @@ EOF
 
 echo "✅ Rollback configuration created: .env.rollback"
 echo "📋 To apply rollback:"
-echo "   1. Stop the server: pkill -f 'bun.*index.ts'"
+echo "   1. Stop the server: pkill -f 'node.*dist/index.js'"
 echo "   2. Backup current .env: cp .env .env.backup"
 echo "   3. Apply rollback: cp .env.rollback .env"
-echo "   4. Restart server: bun run start"
+echo "   4. Restart server: node dist/index.js"
 echo ""
 echo "📋 To restore optimizations:"
-echo "   1. Stop the server: pkill -f 'bun.*index.ts'"
+echo "   1. Stop the server: pkill -f 'node.*dist/index.js'"
 echo "   2. Restore .env: cp .env.backup .env"
-echo "   3. Restart server: bun run start"
+echo "   3. Restart server: node dist/index.js"
 
 # Make script executable
 chmod +x scripts/rollback-optimizations.sh
