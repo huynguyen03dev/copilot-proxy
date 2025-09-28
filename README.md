@@ -24,10 +24,10 @@ A command-line tool that exposes GitHub Copilot as an OpenAI-compatible API endp
 ### Installation
 ```bash
 # Install globally via npm
-npm install -g copilot-proxy
+npm install -g @hazeruno/copilot-proxy
 
 # Or install locally
-npm install copilot-proxy
+npm install @hazeruno/copilot-proxy
 ```
 
 ### Usage
@@ -101,7 +101,7 @@ const response = await client.chat.completions.create({
 You can also use copilot-proxy as a library in your Node.js applications:
 
 ```javascript
-import { CopilotAPIServer, GitHubCopilotAuth } from 'copilot-proxy';
+import { CopilotAPIServer, GitHubCopilotAuth } from '@hazeruno/copilot-proxy';
 
 // Check authentication status
 const isAuthenticated = await GitHubCopilotAuth.isAuthenticated();
@@ -211,7 +211,7 @@ copilot-proxy --auth
 - **"Not authenticated"** → Run `copilot-proxy --auth`
 - **"Connection refused"** → Check if server is running
 - **"Token expired"** → Server auto-refreshes, or re-authenticate
-- **"Command not found"** → Install globally with `npm install -g copilot-proxy`
+- **"Command not found"** → Install globally with `npm install -g @hazeruno/copilot-proxy`
 
 ## 📄 License
 
