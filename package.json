@@ -1,5 +1,5 @@
 {
-  "name": "copilot-proxy",
+  "name": "@huynguyen03dev/copilot-proxy",
   "version": "1.0.0",
   "description": "Local proxy server that exposes GitHub Copilot as OpenAI-compatible endpoint",
   "type": "module",
