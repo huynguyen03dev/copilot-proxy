@@ -1,7 +1,7 @@
 {
   "name": "copilot-proxy",
   "version": "1.0.0",
-  "description": "Local API server that exposes GitHub Copilot as OpenAI-compatible endpoint",
+  "description": "Local proxy server that exposes GitHub Copilot as OpenAI-compatible endpoint",
   "type": "module",
   "main": "dist/lib-index.js",
   "types": "dist/lib-index.d.ts",
