@@ -1,9 +1,9 @@
-# VS Code Copilot API Server
+# Copilot Proxy
 
 > **⚠️ EDUCATIONAL PURPOSE ONLY**
 > This project is for educational and learning purposes only. It demonstrates API proxy patterns, authentication flows, and performance optimization techniques. Not intended for production use.
 
-A local API server that exposes GitHub Copilot as an OpenAI-compatible endpoint for educational exploration of API integration patterns.
+A command-line tool that exposes GitHub Copilot as an OpenAI-compatible API endpoint for educational exploration of API integration patterns.
 
 ## ✨ Features
 
@@ -11,38 +11,39 @@ A local API server that exposes GitHub Copilot as an OpenAI-compatible endpoint 
 - **GitHub OAuth Flow** - Learn device flow authentication patterns
 - **Client Compatibility** - Role normalization for Cline, Continue.dev, and other AI clients
 - **Performance Optimizations** - Connection pooling, caching, compression
-- **Local Development** - Safe learning environment on your machine
+- **CLI Tool** - Easy installation and usage via npm
 - **Cross-Platform** - Works on Windows, macOS, and Linux
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- [Bun](https://bun.sh/) runtime
+- Node.js 18+
 - Active GitHub Copilot subscription
 - Basic understanding of APIs and authentication
 
 ### Installation
 ```bash
-git clone <repository>
-cd vscode-api-server
-bun install
+# Install globally via npm
+npm install -g copilot-proxy
+
+# Or install locally
+npm install copilot-proxy
 ```
 
-### One-Click Startup
-**Windows:** `start.bat`
-**macOS/Linux:** `./start.sh`
-
-**Or manually:**
+### Usage
 ```bash
 # Authenticate and start in one command
-bun run src/index.ts --auto-auth
+copilot-proxy --auto-auth
 
 # Or step by step
-bun run auth        # Authenticate with GitHub
-bun run start       # Start the server
+copilot-proxy --auth        # Authenticate with GitHub
+copilot-proxy               # Start the server
+
+# Custom port/host
+copilot-proxy --port=3000 --host=localhost
 ```
 
-Server runs on `http://localhost:8069` by default.
+Server runs on `http://127.0.0.1:8069` by default.
 
 ## 📚 Learning Objectives
 
@@ -59,7 +60,7 @@ This project demonstrates:
 
 ### Basic API Call
 ```bash
-curl -X POST http://localhost:8069/v1/chat/completions \
+curl -X POST http://127.0.0.1:8069/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4",
@@ -72,7 +73,7 @@ curl -X POST http://localhost:8069/v1/chat/completions \
 import openai
 client = openai.OpenAI(
     api_key="dummy-key",
-    base_url="http://localhost:8069/v1"
+    base_url="http://127.0.0.1:8069/v1"
 )
 response = client.chat.completions.create(
     model="gpt-4",
@@ -80,9 +81,46 @@ response = client.chat.completions.create(
 )
 ```
 
+### With JavaScript/Node.js
+```javascript
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  apiKey: 'dummy-key',
+  baseURL: 'http://127.0.0.1:8069/v1'
+});
+
+const response = await client.chat.completions.create({
+  model: 'gpt-4',
+  messages: [{ role: 'user', content: 'Hello from Node.js!' }]
+});
+```
+
+## 📚 Programmatic Usage
+
+You can also use copilot-proxy as a library in your Node.js applications:
+
+```javascript
+import { CopilotAPIServer, GitHubCopilotAuth } from 'copilot-proxy';
+
+// Check authentication status
+const isAuthenticated = await GitHubCopilotAuth.isAuthenticated();
+
+// Start server programmatically
+const server = new CopilotAPIServer(8069, '127.0.0.1');
+await server.start();
+```
+
 ## ⚙️ Configuration
 
-Configuration via environment variables (see `.env.example`):
+Configure via environment variables or command line arguments:
+
+### Command Line Arguments
+```bash
+copilot-proxy --port=8069 --host=127.0.0.1
+```
+
+### Environment Variables
 ```bash
 PORT=8069                    # Server port
 HOSTNAME=127.0.0.1          # Bind address (localhost for security)
@@ -90,6 +128,11 @@ LOG_LEVEL=info              # debug, info, warn, error
 ENABLE_COMPRESSION=true     # Response compression (recommended)
 CACHE_HEADERS=true          # Client-side caching (recommended)
 ENABLE_CONNECTION_POOLING=true  # HTTP connection pooling (recommended)
+```
+
+### Help
+```bash
+copilot-proxy --help        # Show all available options
 ```
 
 ## 🔍 Key API Endpoints
@@ -100,14 +143,41 @@ ENABLE_CONNECTION_POOLING=true  # HTTP connection pooling (recommended)
 - `GET /` - Health check and server info
 - `GET /metrics` - Performance metrics and monitoring data
 
-## 🛠️ Development
+## 📦 Publishing to npm
+
+To publish this package to npm:
 
 ```bash
-bun run dev          # Development with auto-reload
-bun run build        # Build optimized bundle
-bun run type-check   # TypeScript validation
-bun test             # Run all tests
-bun run test:unit    # Unit tests only
+# Build the project
+npm run build
+
+# Publish to npm (requires npm account)
+npm publish
+```
+
+## 🛠️ Development
+
+If you want to contribute or modify the code:
+
+```bash
+# Clone the repository
+git clone <repository>
+cd copilot-proxy
+
+# Install dependencies
+npm install
+
+# Development with auto-reload
+npm run dev
+
+# Build the project
+npm run build
+
+# Type checking
+npm run type-check
+
+# Run tests
+npm test
 ```
 
 ## 🔒 Security & Disclaimers
@@ -119,8 +189,8 @@ bun run test:unit    # Unit tests only
 - Showcases TypeScript, performance optimization, and structured logging
 
 **Security Notes:**
-- Tokens stored locally in `.auth.json` (restricted permissions)
-- Server binds to localhost by default
+- Tokens stored locally in system config directory (restricted permissions)
+- Server binds to 127.0.0.1 by default for security
 - Uses GitHub's internal API endpoints (subject to change)
 
 **Compliance:**
@@ -133,14 +203,15 @@ bun run test:unit    # Unit tests only
 **Authentication Issues:**
 ```bash
 # Clear and re-authenticate
-bun run clear-auth
-bun run auth
+copilot-proxy --clear-auth
+copilot-proxy --auth
 ```
 
 **Common Problems:**
-- **"Not authenticated"** → Run `bun run auth`
+- **"Not authenticated"** → Run `copilot-proxy --auth`
 - **"Connection refused"** → Check if server is running
 - **"Token expired"** → Server auto-refreshes, or re-authenticate
+- **"Command not found"** → Install globally with `npm install -g copilot-proxy`
 
 ## 📄 License
 
