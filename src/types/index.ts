@@ -13,7 +13,7 @@ export {
   isValidationError,
   isNetworkError,
   isConfigurationError
-} from "./errors"
+} from "./errors.js"
 
 // Export specific HTTP types and utilities
 export {
@@ -24,7 +24,7 @@ export {
   parseContentType,
   buildQueryString,
   parseUserAgent
-} from "./http"
+} from "./http.js"
 
 // Re-export commonly used types for convenience
 export type {
@@ -36,9 +36,9 @@ export type {
   ServerError,
   APIErrorType,
   APIErrorResponse
-} from "./errors"
+} from "./errors.js"
 
 export type {
   HTTPMethod,
   HTTPStatusCode
-} from "./http"
+} from "./http.js"

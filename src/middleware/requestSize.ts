@@ -4,16 +4,16 @@
  */
 
 import { Context, Next } from "hono"
-import { logger } from "../utils/logger"
-import { createAPIErrorResponse } from "../types/errors"
+import { logger } from "../utils/logger.js"
+import { createAPIErrorResponse } from "../types/errors.js"
 import {
   SIZE_CONSTANTS,
   JSON_VALIDATION_CONSTANTS,
   PERFORMANCE_CONSTANTS,
   HTTP_STATUS
-} from "../constants"
-import { buildSizeLimitsConfig } from "../utils/configBuilder"
-import { RequestValidationService } from "../services/requestValidationService"
+} from '../constants/index.js'
+import { buildSizeLimitsConfig } from "../utils/configBuilder.js"
+import { RequestValidationService } from "../services/requestValidationService.js"
 
 /**
  * Request size limits configuration
@@ -41,7 +41,7 @@ const DEFAULT_LIMITS: RequestSizeLimits = {
 export function requestSizeMiddleware(limits: Partial<RequestSizeLimits> = {}) {
   const finalLimits = { ...DEFAULT_LIMITS, ...limits }
   
-  return async (c: Context, next: Next) => {
+  return async (c: Context, next: Next): Promise<Response | void> => {
     try {
       // Skip validation for non-POST requests to allow proper HTTP method validation
       if (c.req.method !== 'POST') {
@@ -80,7 +80,7 @@ export function requestSizeMiddleware(limits: Partial<RequestSizeLimits> = {}) {
             const validationResult = await validateAndParseJsonSinglePass(c, finalLimits)
 
             if (!validationResult.success) {
-              return c.json(validationResult.errorResponse, validationResult.statusCode)
+              return c.json(validationResult.errorResponse, validationResult.statusCode as any)
             }
 
             // Store the parsed body for later use
@@ -419,7 +419,7 @@ export const PRODUCTION_LIMITS: RequestSizeLimits = {
 export function createRequestSizeMiddleware(customLimits?: Partial<RequestSizeLimits>) {
   const validationService = new RequestValidationService(customLimits)
 
-  return async (c: Context, next: Next) => {
+  return async (c: Context, next: Next): Promise<Response | void> => {
     try {
       // Get content length
       const contentLength = c.req.header("content-length")
@@ -435,7 +435,7 @@ export function createRequestSizeMiddleware(customLimits?: Partial<RequestSizeLi
       // Validate content length using service
       const contentLengthResult = validationService.validateContentLength(contentLength)
       if (!contentLengthResult.success) {
-        return c.json(contentLengthResult.errorResponse, contentLengthResult.statusCode)
+        return c.json(contentLengthResult.errorResponse, contentLengthResult.statusCode as any)
       }
 
       // Get and validate request body
@@ -443,7 +443,7 @@ export function createRequestSizeMiddleware(customLimits?: Partial<RequestSizeLi
       const validationResult = await validationService.validateRequestBody(body)
 
       if (!validationResult.success) {
-        return c.json(validationResult.errorResponse, validationResult.statusCode)
+        return c.json(validationResult.errorResponse, validationResult.statusCode as any)
       }
 
       // Store parsed body for downstream use

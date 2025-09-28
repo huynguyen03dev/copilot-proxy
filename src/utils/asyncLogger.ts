@@ -3,8 +3,8 @@
  * High-performance async logging with queue management and performance tracking
  */
 
-import { BatchLogger, LogEntry, createBatchLogger } from "./batchLogger"
-import { LogLevel } from "./logger"
+import { BatchLogger, LogEntry, createBatchLogger } from "./batchLogger.js"
+import { LogLevel } from "./logger.js"
 
 export interface AsyncLoggerConfig {
   enableBatchLogging: boolean

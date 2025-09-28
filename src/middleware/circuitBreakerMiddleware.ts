@@ -4,12 +4,12 @@
  */
 
 import { Context, Next } from "hono"
-import { 
-  getCircuitBreakerManager,
-  CircuitBreakerConfig 
-} from "../utils/circuitBreakerManager"
-import { logger } from "../utils/logger"
-import { getAsyncLogger } from "../utils/asyncLogger"
+import {
+  getCircuitBreakerManager
+} from "../utils/circuitBreakerManager.js"
+import { CircuitBreakerConfig } from "../utils/circuitBreaker.js"
+import { logger } from "../utils/logger.js"
+import { getAsyncLogger } from "../utils/asyncLogger.js"
 
 export interface CircuitBreakerMiddlewareConfig {
   enableForAllEndpoints: boolean
@@ -158,15 +158,15 @@ async function handleCircuitBreakerError(
   const asyncLogger = getAsyncLogger()
   
   // Log the circuit breaker error
-  await asyncLogger.errorAsync(
+  await asyncLogger.logErrorAsync(
     error,
     'CIRCUIT_BREAKER_MIDDLEWARE',
-    { correlationId: c.get('correlationId') },
+    { correlationId: (c as any).get('correlationId') },
     {
       circuitBreakerName,
       path: c.req.path,
       method: c.req.method,
-      userAgent: c.req.header('user-agent')
+      userAgent: c.req.header('user-agent') || undefined
     }
   )
 

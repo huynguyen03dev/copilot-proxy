@@ -64,13 +64,48 @@ export type APIErrorType =
   | ConfigurationError 
   | ServerError
 
-// Error response format (OpenAI compatible)
+// Error context and validation types
+export interface ErrorContext {
+  correlationId?: string
+  userId?: string
+  requestId?: string
+  endpoint?: string
+  method?: string
+  userAgent?: string
+  timestamp?: string
+  [key: string]: unknown
+}
+
+export interface ValidationErrorDetail {
+  field: string
+  message: string
+  value?: unknown
+  code?: string
+}
+
+// Error response format (OpenAI compatible with extensions)
 export interface APIErrorResponse {
   error: {
     message: string
     type: string
     code?: string
     param?: string
+    // Extended properties for detailed error information
+    details?: ValidationErrorDetail[]
+    context?: ErrorContext
+    help_url?: string
+    retry_after?: number
+    actual_size?: number
+    max_size?: number
+    context_info?: Record<string, unknown>
+    request_id?: string
+    method?: string
+    allowed_methods?: string[]
+    resource?: string
+    stream_id?: string
+    service?: string
+    operation?: string
+    timeout_ms?: number
   }
 }
 
@@ -239,14 +274,16 @@ export function createAPIErrorResponse(
   message: string,
   type: string,
   code?: string,
-  param?: string
+  param?: string,
+  extensions?: Partial<Omit<APIErrorResponse['error'], 'message' | 'type' | 'code' | 'param'>>
 ): APIErrorResponse {
   return {
     error: {
       message,
       type,
       code,
-      param
+      param,
+      ...extensions
     }
   }
 }

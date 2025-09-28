@@ -3,8 +3,8 @@
  * Provides caching, memoization, and performance improvements
  */
 
-import { logger } from './logger'
-import { PERFORMANCE_CONSTANTS } from '../constants'
+import { logger } from './logger.js'
+import { PERFORMANCE_CONSTANTS } from '../constants/index.js'
 
 /**
  * Simple LRU Cache implementation for performance optimization
@@ -33,7 +33,9 @@ export class LRUCache<K, V> {
     } else if (this.cache.size >= this.maxSize) {
       // Remove least recently used (first item)
       const firstKey = this.cache.keys().next().value
-      this.cache.delete(firstKey)
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey)
+      }
     }
     this.cache.set(key, value)
   }

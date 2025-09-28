@@ -3,27 +3,27 @@
  * Handles streaming request processing and endpoint discovery
  */
 
-import { logger } from '../utils/logger'
+import { logger } from '../utils/logger.js'
 import {
   TIMEOUT_CONSTANTS,
   ENDPOINT_PATHS,
   HTTP_HEADERS,
   ERROR_CODES,
   PERFORMANCE_CONSTANTS
-} from '../constants'
+} from '../constants/index.js'
 import { 
   ChatCompletionRequest, 
   type EndpointAttempt 
-} from '../types'
-import { StreamingErrorBoundary } from '../utils/errorBoundary'
-import { connectionPool } from '../utils/connectionPool'
-import { endpointLogger } from '../utils/logger'
+} from '../types.js'
+import { StreamingErrorBoundary } from '../utils/errorBoundary.js'
+import { connectionPool } from '../utils/connectionPool.js'
+import { endpointLogger } from '../utils/logger.js'
 import {
   StringBuffer,
   FastJSON,
   PerformanceMonitor,
   LRUCache
-} from '../utils/performanceOptimizer'
+} from '../utils/performanceOptimizer.js'
 
 export interface StreamingEndpointConfig {
   path: string
@@ -113,7 +113,7 @@ export class StreamingService {
           body: JSON.stringify(requestBody),
         })
 
-        attempts.push({ url: apiUrl, status: response.status })
+        attempts.push({ url: apiUrl, format: 0, success: true, status: response.status })
 
         if (response.ok) {
           // Log successful discovery
@@ -134,7 +134,7 @@ export class StreamingService {
         }
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : "Unknown error"
-        attempts.push({ url: apiUrl, status: 0, error: errorMsg })
+        attempts.push({ url: apiUrl, format: 0, success: false, status: 0, error: errorMsg })
         lastError = error instanceof Error ? error : new Error("Unknown error")
         continue
       }
@@ -324,7 +324,7 @@ export class StreamProcessor {
         // Process chunk data
         buffer = Buffer.concat([buffer, Buffer.from(value)])
         const { completeLines, remainingBuffer } = this.extractCompleteLines(buffer)
-        buffer = remainingBuffer
+        buffer = remainingBuffer as Buffer<ArrayBuffer>
 
         for (const line of completeLines) {
           if (line.startsWith('data: ')) {

@@ -4,12 +4,12 @@
  */
 
 import { Pool, request } from 'undici'
-import { logger } from './logger'
+import { logger } from './logger.js'
 import {
   getCircuitBreakerManager,
   executeWithCircuitBreaker,
   CircuitBreakerConfig
-} from './circuitBreakerManager'
+} from './circuitBreakerManager.js'
 
 export interface ConnectionPoolConfig {
   maxConnections: number

@@ -3,7 +3,7 @@
  * Provides comprehensive type checking and validation
  */
 
-import { logger } from './logger'
+import { logger } from './logger.js'
 
 /**
  * Basic type checking utilities
@@ -99,7 +99,7 @@ export const TypeGuards = {
   isValidUrl(value: unknown): value is string {
     if (!this.isString(value)) return false
     try {
-      new URL(value)
+      new URL(value as string)
       return true
     } catch {
       return false
@@ -112,7 +112,7 @@ export const TypeGuards = {
   isValidEmail(value: unknown): value is string {
     if (!this.isString(value)) return false
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    return emailRegex.test(value)
+    return emailRegex.test(value as string)
   },
 
   /**
@@ -121,7 +121,7 @@ export const TypeGuards = {
   isValidJson(value: unknown): value is string {
     if (!this.isString(value)) return false
     try {
-      JSON.parse(value)
+      JSON.parse(value as string)
       return true
     } catch {
       return false

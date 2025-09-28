@@ -3,8 +3,8 @@
  * Advanced performance monitoring with detailed metrics and dashboards
  */
 
-import { AsyncLogger, createAsyncLogger, LogContext } from "./asyncLogger"
-import { logger } from "./logger"
+import { AsyncLogger, createAsyncLogger, LogContext } from "./asyncLogger.js"
+import { logger } from "./logger.js"
 
 export interface PerformanceEntry {
   operation: string

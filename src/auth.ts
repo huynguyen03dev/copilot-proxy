@@ -2,21 +2,87 @@ import path from "path"
 import fs from "fs/promises"
 import { z } from "zod"
 import { spawn } from "child_process"
-import { AuthErrorBoundary } from "./utils/errorBoundary"
-import { tokenCache, type CachedToken } from "./utils/tokenCache"
+import { AuthErrorBoundary } from "./utils/errorBoundary.js"
+import { tokenCache, type CachedToken } from "./utils/tokenCache.js"
 import type {
   DeviceCodeResponse,
   AccessTokenResponse,
   CopilotTokenResponse,
   OAuthInfo
-} from "./types"
+} from "./types.js"
 
 export class GitHubCopilotAuth {
   private static readonly CLIENT_ID = "Iv1.b507a08c87ecfe98"
   private static readonly DEVICE_CODE_URL = "https://github.com/login/device/code"
   private static readonly ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
   private static readonly COPILOT_API_KEY_URL = "https://api.github.com/copilot_internal/v2/token"
-  private static readonly AUTH_FILE = path.join(process.cwd(), ".auth.json")
+
+  // Resolve user config directory cross-platform
+  private static getConfigDir(): string {
+    const appName = "copilot-proxy"
+    if (process.platform === "win32") {
+      const base = process.env.APPDATA || (process.env.USERPROFILE ? path.join(process.env.USERPROFILE, "AppData", "Roaming") : undefined)
+      return path.join(base || "", appName)
+    }
+    if (process.platform === "darwin") {
+      const home = process.env.HOME || ""
+      return path.join(home, "Library", "Application Support", appName)
+    }
+    const xdg = process.env.XDG_CONFIG_HOME || path.join(process.env.HOME || "", ".config")
+    return path.join(xdg, appName)
+  }
+
+  // Get auth file path, optionally overridden by env
+  private static getAuthFilePath(): string {
+    const override = process.env.COPILOT_PROXY_AUTH_FILE
+    if (override && override.length > 0) return override
+    return path.join(this.getConfigDir(), "copilot-credentials.json")
+  }
+
+  // Ensure config dir exists and migrate legacy ./.auth.json if present
+  private static async ensureConfigDirAndMigrate(): Promise<void> {
+    const file = this.getAuthFilePath()
+    const dir = path.dirname(file)
+    try {
+      await fs.mkdir(dir, { recursive: true })
+      try { await fs.chmod(dir, 0o700) } catch {}
+    } catch {}
+
+    // Migrate legacy files from CWD
+    const legacyFiles = [
+      path.join(process.cwd(), ".auth.json"),
+      path.join(process.cwd(), "auth.json")
+    ]
+
+    for (const legacy of legacyFiles) {
+      if (legacy !== file) {
+        try {
+          const stat = await fs.stat(legacy)
+          if (stat.isFile()) {
+            try {
+              await fs.access(file)
+            } catch {
+              try {
+                await fs.rename(legacy, file)
+                await fs.chmod(file, 0o600)
+                console.log(`Migrated legacy auth file from ${legacy} to: ${file}`)
+              } catch {
+                // If rename fails, try copy then unlink
+                try {
+                  const data = await fs.readFile(legacy, "utf-8")
+                  await fs.writeFile(file, data)
+                  await fs.chmod(file, 0o600)
+                  await fs.unlink(legacy).catch(() => {})
+                  console.log(`Copied legacy auth file from ${legacy} to: ${file}`)
+                } catch {}
+              }
+            }
+            break // Stop after first successful migration
+          }
+        } catch {}
+      }
+    }
+  }
 
   /**
    * Automatically open URL in default browser
@@ -352,7 +418,6 @@ export class GitHubCopilotAuth {
       return new Promise((resolve) => {
         const poll = async () => {
           attempts++
-          const elapsed = Date.now() - startTime
           const remaining = Math.max(0, expiryTime - Date.now())
 
           if (remaining <= 0) {
@@ -558,7 +623,8 @@ export class GitHubCopilotAuth {
    */
   static async clearAuth(): Promise<void> {
     try {
-      await fs.unlink(this.AUTH_FILE)
+      const file = this.getAuthFilePath()
+      await fs.unlink(file)
     } catch (error) {
       // File doesn't exist, that's fine
     }
@@ -569,7 +635,9 @@ export class GitHubCopilotAuth {
 
   private static async getAuth(): Promise<OAuthInfo | null> {
     try {
-      const data = await fs.readFile(this.AUTH_FILE, "utf-8")
+      await this.ensureConfigDirAndMigrate()
+      const file = this.getAuthFilePath()
+      const data = await fs.readFile(file, "utf-8")
       const parsed = JSON.parse(data)
       return parsed["github-copilot"] || null
     } catch (error) {
@@ -578,18 +646,20 @@ export class GitHubCopilotAuth {
   }
 
   private static async setAuth(info: OAuthInfo): Promise<void> {
+    await this.ensureConfigDirAndMigrate()
+    const file = this.getAuthFilePath()
+
     let data: Record<string, unknown> = {}
-    
     try {
-      const existing = await fs.readFile(this.AUTH_FILE, "utf-8")
+      const existing = await fs.readFile(file, "utf-8")
       data = JSON.parse(existing)
     } catch (error) {
       // File doesn't exist, start with empty object
     }
 
     data["github-copilot"] = info
-    
-    await fs.writeFile(this.AUTH_FILE, JSON.stringify(data, null, 2))
-    await fs.chmod(this.AUTH_FILE, 0o600) // Secure file permissions
+
+    await fs.writeFile(file, JSON.stringify(data, null, 2))
+    try { await fs.chmod(file, 0o600) } catch {}
   }
 }

@@ -3,7 +3,7 @@
  * Provides structured, configurable, and performance-optimized logging
  */
 
-import { config } from '../config'
+import { config } from '../config/index.js'
 
 export enum LogLevel {
   DEBUG = 0,

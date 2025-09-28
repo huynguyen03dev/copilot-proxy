@@ -1,7 +1,7 @@
 import { Context, Next } from "hono"
 import { gzip, deflate } from "zlib"
 import { promisify } from "util"
-import { logger } from "../utils/logger"
+import { logger } from "../utils/logger.js"
 
 const gzipAsync = promisify(gzip)
 const deflateAsync = promisify(deflate)
@@ -106,7 +106,7 @@ export function compressionMiddleware(config: Partial<CompressionConfig> = {}) {
         headers.set('content-length', compressedBuffer.length.toString())
         headers.set('vary', 'Accept-Encoding')
 
-        c.res = new Response(compressedBuffer, { status: c.res.status, statusText: c.res.statusText, headers })
+        c.res = new Response(compressedBuffer as BodyInit, { status: c.res.status, statusText: c.res.statusText, headers })
 
         if (finalConfig.trackStats) {
           if (Math.random() < 0.1) {

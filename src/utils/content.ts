@@ -1,7 +1,7 @@
-import type { ContentBlock, TextContent, ImageContent } from "../types"
-import { logger } from "./logger"
-import { CONTENT_CONSTANTS, SIZE_CONSTANTS } from "../constants"
-import { safeGet, safeArrayAccess, validateInput } from "./errorBoundary"
+import type { ContentBlock, TextContent, ImageContent } from "../types.js"
+import { logger } from "./logger.js"
+import { CONTENT_CONSTANTS, SIZE_CONSTANTS } from '../constants/index.js'
+import { safeGet, safeArrayAccess, validateInput } from "./errorBoundary.js"
 
 /**
  * Content transformation cache for optimized processing

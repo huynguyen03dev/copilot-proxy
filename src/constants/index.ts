@@ -21,6 +21,7 @@ export const TIMEOUT_CONSTANTS = {
   REQUEST_TIMEOUT_MS: 300 * 1000,        // 5 minutes (300000ms)
   KEEP_ALIVE_TIMEOUT_MS: 65 * 1000,      // 65 seconds
   CIRCUIT_BREAKER_RECOVERY_MS: 30 * 1000, // 30 seconds
+  DEFAULT_TIMEOUT_MS: 30 * 1000,         // 30 seconds - default timeout
   ENDPOINT_DISCOVERY_TIMEOUT_MS: 15 * 1000, // 15 seconds
   NETWORK_REQUEST_TIMEOUT_MS: 15 * 1000,  // 15 seconds
   MEMORY_CHECK_INTERVAL_MS: 30 * 1000,    // 30 seconds
@@ -88,6 +89,7 @@ export const PERFORMANCE_CONSTANTS = {
   DEFAULT_DEBOUNCE_MS: 300,              // Default debounce delay
   DEFAULT_THROTTLE_MS: 1000,             // Default throttle limit
   DEFAULT_BATCH_SIZE: 50,                // Default batch processing size
+  LARGE_REQUEST_THRESHOLD: 10000,        // 10KB - moved from SIZE_CONSTANTS for consistency
   DEFAULT_BATCH_FLUSH_MS: 5000,          // Default batch flush delay
   MEMORY_THRESHOLD_MB: 100,              // Memory usage threshold
   CPU_THRESHOLD_PERCENT: 80              // CPU usage threshold

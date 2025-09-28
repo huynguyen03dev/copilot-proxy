@@ -3,31 +3,20 @@
  * Provides standardized error response creation across the application
  */
 
-import { 
-  HTTP_STATUS, 
-  ERROR_CODES, 
-  CONTENT_TYPES 
-} from '../constants'
-import { createAPIErrorResponse } from '../types/errors'
-import { logger } from './logger'
+import {
+  HTTP_STATUS,
+  ERROR_CODES,
+  CONTENT_TYPES
+} from '../constants/index.js'
+import {
+  createAPIErrorResponse,
+  type ErrorContext,
+  type ValidationErrorDetail
+} from '../types/errors.js'
 
-export interface ErrorContext {
-  correlationId?: string
-  userId?: string
-  requestId?: string
-  endpoint?: string
-  method?: string
-  userAgent?: string
-  timestamp?: string
-  [key: string]: unknown
-}
-
-export interface ValidationErrorDetail {
-  field: string
-  message: string
-  value?: unknown
-  code?: string
-}
+// Re-export types for backward compatibility
+export type { ErrorContext, ValidationErrorDetail } from '../types/errors.js'
+import { logger } from './logger.js'
 
 export interface ErrorResponseOptions {
   context?: ErrorContext
@@ -192,7 +181,7 @@ export class ErrorResponseBuilder {
     )
 
     if (context) {
-      errorResponse.error.context_info = context
+      errorResponse.error.context_info = { message: context }
     }
 
     if (options.context) {

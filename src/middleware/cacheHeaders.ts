@@ -6,7 +6,7 @@
 
 import { Context, Next } from "hono"
 import { createHash } from "crypto"
-import { logger } from "../utils/logger"
+import { logger } from "../utils/logger.js"
 
 export interface CacheConfig {
   enableETags: boolean
@@ -181,7 +181,7 @@ export function cacheHeadersMiddleware(config: Partial<CacheConfig> = {}) {
     ...config
   }
 
-  return async (c: Context, next: Next) => {
+  return async (c: Context, next: Next): Promise<Response | void> => {
     cacheStats.trackRequest()
 
     const method = c.req.method
@@ -373,6 +373,10 @@ export const DEFAULT_CACHE_CONFIG: CacheConfig = {
     '/auth/',
     '/metrics',
     '/health'
+  ],
+  etagSafeEndpoints: [
+    '/',
+    '/v1/models'
   ]
 }
 

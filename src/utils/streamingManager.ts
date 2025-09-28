@@ -3,7 +3,8 @@
  * Implements backpressure handling, optimized chunk processing, and streaming performance enhancements
  */
 
-import { logger } from './logger'
+import { logger } from './logger.js'
+import { streamCoordinator } from './streamCoordinator.js'
 
 export interface StreamingConfig {
   maxConcurrentStreams: number
@@ -37,6 +38,7 @@ export class StreamingManager {
   private activeStreams = new Map<string, StreamMetrics>()
   private streamBuffers = new Map<string, Buffer[]>()
   private backpressureStates = new Map<string, BackpressureState>()
+  private controllerStates = new Map<string, { closed: boolean, reason?: string }>()
   private workerPool: Worker[] = []
   private config: StreamingConfig
 
@@ -57,12 +59,16 @@ export class StreamingManager {
   }
 
   /**
-   * Start a new optimized stream with backpressure handling
+   * Start a new optimized stream with backpressure handling and coordination
    */
   async startStream(streamId: string, sourceStream: ReadableStream): Promise<ReadableStream> {
     if (this.activeStreams.size >= this.config.maxConcurrentStreams) {
       throw new Error(`Maximum concurrent streams (${this.config.maxConcurrentStreams}) exceeded`)
     }
+
+    // Register with the global coordinator
+    const streamState = streamCoordinator.registerStream(streamId)
+    streamCoordinator.markLayerActive(streamId, 'streamingManager')
 
     const metrics: StreamMetrics = {
       streamId,
@@ -82,6 +88,12 @@ export class StreamingManager {
       downstreamRate: 0,
       adaptiveDelay: 0
     })
+    this.controllerStates.set(streamId, { closed: false })
+
+    // Register cleanup callback with coordinator
+    streamCoordinator.registerCleanupCallback(streamId, () => {
+      this.cleanupStreamInternal(streamId)
+    })
 
     logger.debug('STREAMING_MANAGER', `Started stream ${streamId}`)
 
@@ -96,8 +108,12 @@ export class StreamingManager {
     const metrics = this.activeStreams.get(streamId)!
     const buffer = this.streamBuffers.get(streamId)!
 
+    // Register reader and controller with coordinator
+    streamCoordinator.registerReader(streamId, reader)
+
     return new ReadableStream({
       start: (controller) => {
+        streamCoordinator.registerController(streamId, controller)
         logger.debug('STREAMING_MANAGER', `Stream ${streamId} started`)
       },
 
@@ -110,7 +126,8 @@ export class StreamingManager {
           const { done, value } = await reader.read()
 
           if (done) {
-            await this.finalizeStream(streamId, controller)
+            // Use coordinator for safe finalization
+            await streamCoordinator.initiateCleanup(streamId, 'stream completed', 'streamingManager')
             return
           }
 
@@ -118,47 +135,28 @@ export class StreamingManager {
           const processedChunk = await this.processChunkOptimized(streamId, value)
 
           if (processedChunk) {
-            // STABILITY FIX: Check if controller is still open before calling enqueue()
-            // Prevents "ReadableStreamDirectController is now closed" errors
-            if (controller.desiredSize !== null) {
+            // STABILITY FIX: Check if stream is still active via coordinator
+            if (streamCoordinator.isStreamActive(streamId) && this.isControllerOpen(streamId, controller)) {
               controller.enqueue(processedChunk)
               this.updateMetrics(streamId, processedChunk)
             } else {
-              logger.debug('STREAMING_MANAGER', `Stream ${streamId} controller already closed, skipping enqueue`)
+              logger.debug('STREAMING_MANAGER', `Stream ${streamId} no longer active, skipping enqueue`)
             }
           }
 
         } catch (error) {
           logger.error('STREAMING_MANAGER', `Stream ${streamId} error: ${error}`)
 
-          // STABILITY FIX: Check if controller is still open before calling error()
-          // Prevents "ReadableStreamDirectController is now closed" errors
-          try {
-            if (controller.desiredSize !== null) {
-              controller.error(error)
-            } else {
-              logger.debug('STREAMING_MANAGER', `Stream ${streamId} controller already closed, skipping error()`)
-            }
-          } catch (controllerError) {
-            logger.warn('STREAMING_MANAGER', `Failed to signal error to controller for stream ${streamId}: ${controllerError}`)
-          }
-
-          this.cleanupStream(streamId)
+          // Use coordinator for error cleanup
+          await streamCoordinator.initiateCleanup(streamId, `error: ${error}`, 'streamingManager')
         }
       },
 
       cancel: (reason) => {
-        logger.debug('STREAMING_MANAGER', `Stream ${streamId} cancelled`)
+        logger.debug('STREAMING_MANAGER', `Stream ${streamId} cancelled: ${reason}`)
 
-        // STABILITY FIX: Cancel upstream reader to prevent races
-        // This stops the source stream and reduces chance of in-flight pulls
-        try {
-          reader.cancel(reason)
-        } catch (cancelError) {
-          logger.debug('STREAMING_MANAGER', `Failed to cancel upstream reader for stream ${streamId}: ${cancelError}`)
-        }
-
-        this.cleanupStream(streamId)
+        // Use coordinator for cancellation cleanup
+        streamCoordinator.initiateCleanup(streamId, `cancelled: ${reason}`, 'streamingManager')
       }
     })
   }
@@ -215,7 +213,7 @@ export class StreamingManager {
       let processedBuffer = buffer
       if (this.config.compressionEnabled && buffer.length > 2048) { // Higher threshold for safety
         const originalSize = buffer.length
-        processedBuffer = await this.compressChunk(buffer)
+        processedBuffer = await this.compressChunk(buffer) as Buffer<ArrayBuffer>
 
         // Only use compressed version if it's actually smaller and valid
         if (processedBuffer.length < originalSize && processedBuffer.length > 0) {
@@ -320,7 +318,7 @@ export class StreamingManager {
   }
 
   /**
-   * Finalize stream processing
+   * Finalize stream processing with safe controller closure
    */
   private async finalizeStream(streamId: string, controller: ReadableStreamDefaultController): Promise<void> {
     const metrics = this.activeStreams.get(streamId)!
@@ -331,26 +329,15 @@ export class StreamingManager {
       `(${metrics.processingRate.toFixed(1)} chunks/sec, ${(metrics.bytesProcessed / 1024).toFixed(1)}KB)`
     )
 
-    // STABILITY FIX: Check if controller is still open before closing
-    // Prevents "ReadableStreamDirectController is now closed" errors
-    try {
-      if (controller.desiredSize !== null) {
-        controller.close()
-        logger.debug('STREAMING_MANAGER', `Stream ${streamId} controller closed successfully`)
-      } else {
-        logger.debug('STREAMING_MANAGER', `Stream ${streamId} controller already closed`)
-      }
-    } catch (error) {
-      logger.warn('STREAMING_MANAGER', `Failed to close controller for stream ${streamId}: ${error}`)
-    }
-
+    // STABILITY FIX: Safe controller closure with state tracking
+    this.safeControllerClose(streamId, controller, 'normal completion')
     this.cleanupStream(streamId)
   }
 
   /**
-   * Clean up stream resources
+   * Internal cleanup method called by the coordinator (idempotent)
    */
-  private cleanupStream(streamId: string): void {
+  private cleanupStreamInternal(streamId: string): void {
     // Keep metrics for a short time for testing/monitoring purposes
     const metrics = this.activeStreams.get(streamId)
     if (metrics) {
@@ -360,10 +347,106 @@ export class StreamingManager {
       }, 1000) // Keep for 1 second
     }
 
+    // Clean up all stream-related resources
     this.streamBuffers.delete(streamId)
     this.backpressureStates.delete(streamId)
 
-    logger.debug('STREAMING_MANAGER', `Cleaned up stream ${streamId}`)
+    // Clean up controller state after a delay to allow any pending operations
+    setTimeout(() => {
+      this.controllerStates.delete(streamId)
+    }, 2000) // Keep controller state longer for debugging
+
+    logger.debug('STREAMING_MANAGER', `Internal cleanup completed for stream ${streamId}`)
+  }
+
+  /**
+   * Clean up stream resources (deprecated - use coordinator instead)
+   * @deprecated Use streamCoordinator.initiateCleanup() instead
+   */
+  private cleanupStream(streamId: string): void {
+    logger.warn('STREAMING_MANAGER', `Direct cleanup called for ${streamId} - should use coordinator`)
+    streamCoordinator.initiateCleanup(streamId, 'direct cleanup call', 'streamingManager')
+  }
+
+  /**
+   * Check if controller is still open and safe to use
+   */
+  private isControllerOpen(streamId: string, controller: ReadableStreamDefaultController): boolean {
+    const state = this.controllerStates.get(streamId)
+    if (state?.closed) {
+      return false
+    }
+
+    // Double-check with controller's internal state
+    return controller.desiredSize !== null
+  }
+
+  /**
+   * Mark controller as closed to prevent further operations
+   */
+  private markControllerClosed(streamId: string, reason: string): void {
+    const state = this.controllerStates.get(streamId)
+    if (state && !state.closed) {
+      state.closed = true
+      state.reason = reason
+      logger.debug('STREAMING_MANAGER', `Marked controller ${streamId} as closed: ${reason}`)
+    }
+  }
+
+  /**
+   * Safely close controller with state tracking (idempotent)
+   */
+  private safeControllerClose(streamId: string, controller: ReadableStreamDefaultController, reason: string): void {
+    const state = this.controllerStates.get(streamId)
+
+    // Check if already closed
+    if (state?.closed) {
+      logger.debug('STREAMING_MANAGER', `Controller ${streamId} already closed (${state.reason}), skipping close`)
+      return
+    }
+
+    // Attempt to close controller
+    try {
+      if (controller.desiredSize !== null) {
+        controller.close()
+        this.markControllerClosed(streamId, reason)
+        logger.debug('STREAMING_MANAGER', `Controller ${streamId} closed successfully: ${reason}`)
+      } else {
+        this.markControllerClosed(streamId, `already closed when attempting: ${reason}`)
+        logger.debug('STREAMING_MANAGER', `Controller ${streamId} was already closed: ${reason}`)
+      }
+    } catch (error) {
+      this.markControllerClosed(streamId, `error during close: ${error}`)
+      logger.warn('STREAMING_MANAGER', `Failed to close controller ${streamId}: ${error}`)
+    }
+  }
+
+  /**
+   * Safely signal error to controller with state tracking (idempotent)
+   */
+  private safeControllerError(streamId: string, controller: ReadableStreamDefaultController, error: any): void {
+    const state = this.controllerStates.get(streamId)
+
+    // Check if already closed
+    if (state?.closed) {
+      logger.debug('STREAMING_MANAGER', `Controller ${streamId} already closed (${state.reason}), skipping error signal`)
+      return
+    }
+
+    // Attempt to signal error to controller
+    try {
+      if (controller.desiredSize !== null) {
+        controller.error(error)
+        this.markControllerClosed(streamId, `error: ${error}`)
+        logger.debug('STREAMING_MANAGER', `Controller ${streamId} error signaled successfully`)
+      } else {
+        this.markControllerClosed(streamId, `already closed when signaling error: ${error}`)
+        logger.debug('STREAMING_MANAGER', `Controller ${streamId} was already closed when signaling error`)
+      }
+    } catch (controllerError) {
+      this.markControllerClosed(streamId, `error during error signal: ${controllerError}`)
+      logger.warn('STREAMING_MANAGER', `Failed to signal error to controller ${streamId}: ${controllerError}`)
+    }
   }
 
   /**
@@ -407,6 +490,59 @@ export class StreamingManager {
    */
   getStreamMetrics(streamId: string): StreamMetrics | null {
     return this.activeStreams.get(streamId) || null
+  }
+
+  /**
+   * Get current streaming statistics
+   */
+  getStats(): { activeStreams: number, totalBufferSize: number, controllerStates: number } {
+    const activeStreamCount = this.activeStreams.size
+    const totalBufferSize = Array.from(this.streamBuffers.values())
+      .reduce((total, buffer) => total + buffer.reduce((sum, chunk) => sum + chunk.length, 0), 0)
+
+    return {
+      activeStreams: activeStreamCount,
+      totalBufferSize,
+      controllerStates: this.controllerStates.size
+    }
+  }
+
+  /**
+   * Get controller state for debugging (useful for troubleshooting)
+   */
+  getControllerState(streamId: string): { closed: boolean, reason?: string } | undefined {
+    return this.controllerStates.get(streamId)
+  }
+
+  /**
+   * Get all controller states for debugging
+   */
+  getAllControllerStates(): Map<string, { closed: boolean, reason?: string }> {
+    return new Map(this.controllerStates)
+  }
+
+  /**
+   * Emergency cleanup for all streams (useful for server shutdown)
+   */
+  emergencyCleanupAll(): void {
+    logger.warn('STREAMING_MANAGER', `Emergency cleanup of ${this.activeStreams.size} active streams`)
+
+    // Mark all controllers as closed to prevent further operations
+    for (const [streamId] of this.activeStreams) {
+      this.markControllerClosed(streamId, 'emergency cleanup')
+    }
+
+    // Clear all maps
+    this.activeStreams.clear()
+    this.streamBuffers.clear()
+    this.backpressureStates.clear()
+
+    // Clear controller states after a delay
+    setTimeout(() => {
+      this.controllerStates.clear()
+    }, 5000)
+
+    logger.info('STREAMING_MANAGER', 'Emergency cleanup completed')
   }
 }
 

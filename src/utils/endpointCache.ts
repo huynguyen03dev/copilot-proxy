@@ -3,7 +3,7 @@
  * Caches successful Copilot API endpoints to eliminate sequential discovery overhead
  */
 
-import { logger } from './logger'
+import { logger } from './logger.js'
 
 export interface CachedEndpoint {
   url: string

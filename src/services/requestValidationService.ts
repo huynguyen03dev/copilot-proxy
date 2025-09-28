@@ -3,21 +3,21 @@
  * Handles request size validation, JSON structure validation, and content validation
  */
 
-import { logger } from '../utils/logger'
-import { createAPIErrorResponse } from '../types/errors'
+import { logger } from '../utils/logger.js'
+import { createAPIErrorResponse } from '../types/errors.js'
 import {
   SIZE_CONSTANTS,
   JSON_VALIDATION_CONSTANTS,
   PERFORMANCE_CONSTANTS,
   HTTP_STATUS
-} from '../constants'
-import { Environment } from '../utils/configBuilder'
+} from '../constants/index.js'
+import { Environment } from '../utils/configBuilder.js'
 import {
   typeGuards,
   RuntimeValidator,
   TypeGuards
-} from '../utils/typeGuards'
-import { ErrorResponseBuilder } from '../utils/errorResponseBuilder'
+} from '../utils/typeGuards.js'
+import { ErrorResponseBuilder } from '../utils/errorResponseBuilder.js'
 
 export interface RequestSizeLimits {
   maxBodySize: number

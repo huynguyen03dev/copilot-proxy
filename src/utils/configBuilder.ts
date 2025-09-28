@@ -3,7 +3,7 @@
  * Provides consistent configuration building patterns across the application
  */
 
-import { ENVIRONMENTS, DEFAULT_CONFIGS } from '../constants'
+import { ENVIRONMENTS, DEFAULT_CONFIGS } from '../constants/index.js'
 
 export interface BaseConfig {
   enableMetrics?: boolean
@@ -12,9 +12,9 @@ export interface BaseConfig {
 }
 
 export interface EnvironmentOverrides<T> {
-  [ENVIRONMENTS.DEVELOPMENT]?: Partial<T>
-  [ENVIRONMENTS.PRODUCTION]?: Partial<T>
-  [ENVIRONMENTS.TEST]?: Partial<T>
+  development?: Partial<T>
+  production?: Partial<T>
+  test?: Partial<T>
 }
 
 /**
@@ -25,8 +25,8 @@ export function buildConfig<T extends BaseConfig>(
   environmentOverrides: EnvironmentOverrides<T> = {},
   userConfig: Partial<T> = {}
 ): T {
-  const env = (process.env.NODE_ENV as keyof typeof ENVIRONMENTS) || ENVIRONMENTS.DEVELOPMENT
-  const envOverrides = environmentOverrides[env] || {}
+  const env = process.env.NODE_ENV || ENVIRONMENTS.DEVELOPMENT
+  const envOverrides = environmentOverrides[env as keyof EnvironmentOverrides<T>] || {}
   
   return {
     ...defaultConfig,
@@ -132,10 +132,10 @@ export function mergeConfigs<T extends Record<string, any>>(
           !Array.isArray(result[key])
         ) {
           // Deep merge for nested objects
-          result[key] = mergeConfigs(result[key], value)
+          (result as any)[key] = mergeConfigs(result[key], value)
         } else {
           // Direct assignment for primitives, arrays, and null values
-          result[key] = value
+          (result as any)[key] = value
         }
       }
     }

@@ -3,8 +3,8 @@
  * Provides enhanced logging with automatic context injection and correlation tracking
  */
 
-import { Logger, LogLevel } from './logger'
-import { ENVIRONMENTS } from '../constants'
+import { Logger, LogLevel } from './logger.js'
+import { ENVIRONMENTS } from '../constants/index.js'
 
 export interface LogContext {
   correlationId?: string
@@ -129,7 +129,7 @@ export class ContextualLogger {
    * Enhanced debug logging with context
    */
   debug(category: string, message: string, additionalContext?: LogContext): void {
-    if (!this.baseLogger.isLevelEnabled?.(LogLevel.DEBUG)) return
+    // Performance check is handled by the base logger
 
     const contextStr = this.serializeContext(additionalContext)
     this.baseLogger.debug(category, `${message}${contextStr}`)
@@ -139,7 +139,7 @@ export class ContextualLogger {
    * Enhanced info logging with context
    */
   info(category: string, message: string, additionalContext?: LogContext): void {
-    if (!this.baseLogger.isLevelEnabled?.(LogLevel.INFO)) return
+    // Performance check is handled by the base logger
 
     const contextStr = this.serializeContext(additionalContext)
     this.baseLogger.info(category, `${message}${contextStr}`)
@@ -149,7 +149,7 @@ export class ContextualLogger {
    * Enhanced warning logging with context
    */
   warn(category: string, message: string, additionalContext?: LogContext): void {
-    if (!this.baseLogger.isLevelEnabled?.(LogLevel.WARN)) return
+    // Performance check is handled by the base logger
 
     const contextStr = this.serializeContext(additionalContext)
     this.baseLogger.warn(category, `${message}${contextStr}`)
@@ -159,7 +159,7 @@ export class ContextualLogger {
    * Enhanced error logging with context
    */
   error(category: string, message: string, error?: Error, additionalContext?: LogContext): void {
-    if (!this.baseLogger.isLevelEnabled?.(LogLevel.ERROR)) return
+    // Performance check is handled by the base logger
 
     const errorContext = error ? {
       errorName: error.name,

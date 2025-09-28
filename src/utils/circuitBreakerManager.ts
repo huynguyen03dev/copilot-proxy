@@ -3,17 +3,20 @@
  * Manages multiple circuit breakers and provides centralized monitoring
  */
 
-import { 
-  CircuitBreaker, 
-  CircuitBreakerConfig, 
+import {
+  CircuitBreaker,
+  CircuitBreakerConfig,
   CircuitBreakerMetrics,
   CircuitBreakerEvent,
   createCircuitBreaker,
   DEFAULT_CIRCUIT_BREAKER_CONFIG,
   PRODUCTION_CIRCUIT_BREAKER_CONFIG
-} from "./circuitBreaker"
-import { logger } from "./logger"
-import { getAsyncLogger } from "./asyncLogger"
+} from "./circuitBreaker.js"
+
+// Re-export CircuitBreakerConfig for external use
+export type { CircuitBreakerConfig }
+import { logger } from "./logger.js"
+import { getAsyncLogger } from "./asyncLogger.js"
 
 export interface CircuitBreakerManagerConfig {
   enableGlobalMetrics: boolean

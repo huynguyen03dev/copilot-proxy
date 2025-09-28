@@ -5,8 +5,8 @@
  */
 
 import { Context, Next } from "hono"
-import { logger } from "../utils/logger"
-import { createAPIErrorResponse } from "../types/errors"
+import { logger } from "../utils/logger.js"
+import { createAPIErrorResponse } from "../types/errors.js"
 
 export interface StreamingValidationConfig {
   maxChunkSize: number
@@ -159,7 +159,7 @@ export class StreamingValidator {
   /**
    * Check if JSON parsing is complete
    */
-  private isJsonComplete(): boolean {
+  public isJsonComplete(): boolean {
     return this.depth === 0 && this.buffer.trim().length > 0 && !this.inString
   }
 
@@ -239,7 +239,7 @@ const DEFAULT_CONFIG: StreamingValidationConfig = {
 export function streamingValidationMiddleware(config: Partial<StreamingValidationConfig> = {}) {
   const finalConfig = { ...DEFAULT_CONFIG, ...config }
   
-  return async (c: Context, next: Next) => {
+  return async (c: Context, next: Next): Promise<Response | void> => {
     try {
       // Skip validation for non-POST requests
       if (c.req.method !== 'POST') {
@@ -375,10 +375,8 @@ export const PRODUCTION_STREAMING_CONFIG: StreamingValidationConfig = {
  * Response Compression Utilities
  * Proper compression implementation with streaming support
  */
-import { Context, Next } from "hono"
 import { gzip, deflate } from "zlib"
 import { promisify } from "util"
-import { logger } from "../utils/logger"
 
 const gzipAsync = promisify(gzip)
 const deflateAsync = promisify(deflate)
@@ -540,7 +538,7 @@ export function compressionMiddleware(config: Partial<CompressionConfig> = {}) {
         headers.set('content-length', compressedBuffer.length.toString())
         headers.set('vary', 'Accept-Encoding')
 
-        c.res = new Response(compressedBuffer, {
+        c.res = new Response(compressedBuffer as BodyInit, {
           status: c.res.status,
           statusText: c.res.statusText,
           headers

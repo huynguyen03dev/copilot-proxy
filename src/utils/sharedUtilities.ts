@@ -3,10 +3,10 @@
  * Consolidates common patterns and eliminates code duplication
  */
 
-import { logger } from './logger'
-import { ErrorResponseBuilder, ErrorContext } from './errorResponseBuilder'
-import { typeGuards } from './typeGuards'
-import { HTTP_STATUS, TIMEOUT_CONSTANTS } from '../constants'
+import { logger } from './logger.js'
+import { ErrorResponseBuilder, ErrorContext } from './errorResponseBuilder.js'
+import { typeGuards } from './typeGuards.js'
+import { HTTP_STATUS, TIMEOUT_CONSTANTS } from '../constants/index.js'
 
 /**
  * Common HTTP response patterns
@@ -261,7 +261,8 @@ export class ValidationUtils {
       if (!elementValidator(value[i])) {
         return { isValid: false, error: `${fieldName}[${i}] is invalid` }
       }
-      validatedItems.push(value[i])
+      // Safe to cast after validation
+      validatedItems.push(value[i] as T)
     }
 
     return { isValid: true, validatedArray: validatedItems }

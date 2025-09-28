@@ -3,7 +3,7 @@
  * Provides comprehensive error handling boundaries for critical operations
  */
 
-import { logger } from './logger'
+import { logger } from './logger.js'
 import {
   APIErrorType,
   ErrorFactory,
@@ -12,9 +12,9 @@ import {
   type StreamingError,
   type NetworkError,
   type ValidationError
-} from '../types/errors'
-import { ErrorResponseBuilder, ErrorContext } from './errorResponseBuilder'
-import { HTTP_STATUS } from '../constants'
+} from '../types/errors.js'
+import { ErrorResponseBuilder, ErrorContext } from './errorResponseBuilder.js'
+import { HTTP_STATUS } from '../constants/index.js'
 
 /**
  * Error boundary configuration
@@ -379,4 +379,51 @@ export class AuthErrorBoundary {
       authConfig
     )
   }
+}
+
+/**
+ * Safe object property access utility
+ */
+export function safeGet<T>(obj: any, path: string, defaultValue?: T): T | undefined {
+  try {
+    const keys = path.split('.')
+    let current = obj
+
+    for (const key of keys) {
+      if (current == null) return defaultValue
+      current = current[key]
+    }
+
+    return current ?? defaultValue
+  } catch {
+    return defaultValue
+  }
+}
+
+/**
+ * Safe array access utility
+ */
+export function safeArrayAccess<T>(arr: T[], index: number, defaultValue?: T): T | undefined {
+  try {
+    if (!Array.isArray(arr) || index < 0 || index >= arr.length) {
+      return defaultValue
+    }
+    return arr[index] ?? defaultValue
+  } catch {
+    return defaultValue
+  }
+}
+
+/**
+ * Input validation utility
+ */
+export function validateInput<T>(
+  input: unknown,
+  validator: (value: unknown) => value is T,
+  errorMessage?: string
+): T {
+  if (!validator(input)) {
+    throw new Error(errorMessage || 'Invalid input provided')
+  }
+  return input
 }

@@ -4,7 +4,7 @@
  * to reduce redundant upstream calls and improve performance
  */
 
-import { logger } from './logger'
+import { logger } from './logger.js'
 import { createHash } from 'crypto'
 
 export interface CachedResponse {

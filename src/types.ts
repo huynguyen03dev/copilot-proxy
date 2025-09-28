@@ -189,6 +189,16 @@ export const ChatCompletionStreamChunk = z.object({
 export type DeltaMessage = z.infer<typeof DeltaMessage>
 export type ChatCompletionStreamChunk = z.infer<typeof ChatCompletionStreamChunk>
 
+// Endpoint discovery types
+export interface EndpointAttempt {
+  url: string
+  format: number
+  success: boolean
+  status: number
+  error?: string
+  responseTime?: number
+}
+
 // Re-export error types from dedicated error module
 export type {
   APIErrorType,
@@ -200,7 +210,7 @@ export type {
   ConfigurationError,
   ServerError,
   BaseError
-} from './types/errors'
+} from './types/errors.js'
 
 export {
   ErrorFactory,
@@ -213,7 +223,7 @@ export {
   isNetworkError,
   isConfigurationError,
   isServerError
-} from './types/errors'
+} from './types/errors.js'
 
 // Re-export HTTP types
 export type {
@@ -230,7 +240,7 @@ export type {
   StreamingResponse,
   RequestContext,
   ResponseContext
-} from './types/http'
+} from './types/http.js'
 
 export {
   isHTTPMethod,
@@ -241,7 +251,7 @@ export {
   parseContentType,
   buildQueryString,
   parseUserAgent
-} from './types/http'
+} from './types/http.js'
 
 // Legacy APIError interface for backward compatibility
 export interface APIError {

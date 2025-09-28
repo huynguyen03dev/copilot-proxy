@@ -4,8 +4,8 @@
  * Prevents cascading failures and enables fast failure recovery
  */
 
-import { logger } from "./logger"
-import { getPerformanceLogger } from "./performanceLogger"
+import { logger } from "./logger.js"
+import { getPerformanceLogger } from "./performanceLogger.js"
 
 export type CircuitBreakerState = 'CLOSED' | 'OPEN' | 'HALF_OPEN'
 

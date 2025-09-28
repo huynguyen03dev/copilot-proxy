@@ -3,16 +3,16 @@
  * Eliminates code duplication by providing unified validation patterns
  */
 
-import { logger } from '../utils/logger'
-import { ErrorResponseBuilder } from '../utils/errorResponseBuilder'
-import { typeGuards } from '../utils/typeGuards'
-import { ValidationUtils } from '../utils/sharedUtilities'
+import { logger } from '../utils/logger.js'
+import { ErrorResponseBuilder } from '../utils/errorResponseBuilder.js'
+import { typeGuards } from '../utils/typeGuards.js'
+import { ValidationUtils } from '../utils/sharedUtilities.js'
 import { 
   SIZE_CONSTANTS, 
   JSON_VALIDATION_CONSTANTS,
   HTTP_STATUS 
-} from '../constants'
-import { ChatCompletionRequest } from '../types'
+} from '../constants/index.js'
+import { ChatCompletionRequest } from '../types.js'
 
 export interface ValidationResult<T = any> {
   success: boolean
@@ -406,31 +406,51 @@ export class ConsolidatedValidationService {
     // Validate HTTP method
     const methodValidation = this.validateHttpMethod(method, ['POST'])
     if (!methodValidation.success) {
-      return methodValidation
+      return {
+        success: false,
+        errorResponse: methodValidation.errorResponse,
+        statusCode: methodValidation.statusCode
+      }
     }
 
     // Validate content type
     const contentTypeValidation = this.validateContentType(contentType)
     if (!contentTypeValidation.success) {
-      return contentTypeValidation
+      return {
+        success: false,
+        errorResponse: contentTypeValidation.errorResponse,
+        statusCode: contentTypeValidation.statusCode
+      }
     }
 
     // Validate auth token
     const tokenValidation = this.validateAuthToken(authToken)
     if (!tokenValidation.success) {
-      return tokenValidation
+      return {
+        success: false,
+        errorResponse: tokenValidation.errorResponse,
+        statusCode: tokenValidation.statusCode
+      }
     }
 
     // Validate request body
     const bodyValidation = this.validateRequestBody(body)
     if (!bodyValidation.success) {
-      return bodyValidation
+      return {
+        success: false,
+        errorResponse: bodyValidation.errorResponse,
+        statusCode: bodyValidation.statusCode
+      }
     }
 
     // Validate chat completion request structure
     const requestValidation = this.validateChatCompletionRequest(bodyValidation.data)
     if (!requestValidation.success) {
-      return requestValidation
+      return {
+        success: false,
+        errorResponse: requestValidation.errorResponse,
+        statusCode: requestValidation.statusCode
+      }
     }
 
     logger.debug('CONSOLIDATED_VALIDATION', 'Full request validation completed', {

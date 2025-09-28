@@ -6,7 +6,7 @@
 import { writeFile, appendFile, mkdir } from "fs/promises"
 import { existsSync } from "fs"
 import { join } from "path"
-import { logger } from "./logger"
+import { logger } from "./logger.js"
 
 export interface LogEntry {
   timestamp: number

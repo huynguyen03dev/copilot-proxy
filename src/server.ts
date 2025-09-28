@@ -1,31 +1,34 @@
 import { Hono } from "hono"
+import { serve } from "@hono/node-server"
+
 import { cors } from "hono/cors"
 import { logger as honoLogger } from "hono/logger"
 import { streamSSE } from "hono/streaming"
 import { zValidator } from "@hono/zod-validator"
-import { GitHubCopilotAuth } from "./auth"
+import { GitHubCopilotAuth } from "./auth.js"
 import {
   TIMEOUT_CONSTANTS,
   PERFORMANCE_CONSTANTS,
   HTTP_STATUS,
   ENDPOINT_PATHS,
   ERROR_CODES
-} from "./constants"
+} from "./constants/index.js"
 
 import {
   ChatCompletionRequest,
   ChatCompletionResponse,
   ChatCompletionStreamChunk,
+  ContentBlock,
   ErrorFactory,
   toAPIErrorResponse
-} from "./types"
-import { createAPIErrorResponse } from "./types/errors"
+} from "./types.js"
+import { createAPIErrorResponse } from "./types/errors.js"
 import {
   validateContent,
   transformMessagesForCopilot,
   getContentStats
-} from "./utils/content"
-import { logRoleNormalizationStats } from "./utils/roleNormalization"
+} from "./utils/content.js"
+import { logRoleNormalizationStats } from "./utils/roleNormalization.js"
 import {
   logger,
   streamLogger,
@@ -33,62 +36,63 @@ import {
   modelLogger,
   memoryLogger,
   type EndpointAttempt
-} from "./utils/logger"
-import { config, logConfiguration } from "./config"
-import { securityConfig } from "./config/security"
-import { correlationMiddleware } from "./middleware/correlation"
-import { requestSizeMiddleware, TEST_LIMITS, PRODUCTION_LIMITS } from "./middleware/requestSize"
+} from "./utils/logger.js"
+import { config, logConfiguration } from "./config/index.js"
+import { securityConfig } from "./config/security.js"
+import { correlationMiddleware } from "./middleware/correlation.js"
+import { requestSizeMiddleware, TEST_LIMITS, PRODUCTION_LIMITS } from "./middleware/requestSize.js"
 import {
   streamingValidationMiddleware,
   TEST_STREAMING_CONFIG,
   PRODUCTION_STREAMING_CONFIG
-} from "./middleware/streamingValidation"
+} from "./middleware/streamingValidation.js"
 import {
   compressionMiddleware,
   DEFAULT_COMPRESSION_CONFIG,
   PRODUCTION_COMPRESSION_CONFIG
-} from "./middleware/compression"
+} from "./middleware/compression.js"
 import {
   cacheHeadersMiddleware,
   DEFAULT_CACHE_CONFIG,
   PRODUCTION_CACHE_CONFIG,
   TEST_CACHE_CONFIG
-} from "./middleware/cacheHeaders"
+} from "./middleware/cacheHeaders.js"
 import {
   initializeBatchLogger,
   PRODUCTION_BATCH_CONFIG,
   DEFAULT_BATCH_CONFIG
-} from "./utils/batchLogger"
+} from "./utils/batchLogger.js"
 import {
   initializeAsyncLogger,
   PRODUCTION_ASYNC_CONFIG,
   DEFAULT_ASYNC_CONFIG
-} from "./utils/asyncLogger"
+} from "./utils/asyncLogger.js"
 import {
   initializePerformanceLogger,
   getPerformanceLogger
-} from "./utils/performanceLogger"
+} from "./utils/performanceLogger.js"
 import {
   initializeCircuitBreakerManager,
   PRODUCTION_MANAGER_CONFIG,
   DEFAULT_MANAGER_CONFIG
-} from "./utils/circuitBreakerManager"
+} from "./utils/circuitBreakerManager.js"
 import {
   circuitBreakerMiddleware,
   circuitBreakerHealthMiddleware,
   circuitBreakerAdminMiddleware,
   PRODUCTION_CIRCUIT_BREAKER_MIDDLEWARE_CONFIG,
   DEFAULT_CIRCUIT_BREAKER_MIDDLEWARE_CONFIG
-} from "./middleware/circuitBreakerMiddleware"
+} from "./middleware/circuitBreakerMiddleware.js"
 
 import {
   StreamingErrorBoundary,
   NetworkErrorBoundary
-} from "./utils/errorBoundary"
-import { endpointCache } from "./utils/endpointCache"
-import { connectionPool } from "./utils/connectionPool"
-import { streamingManager } from "./utils/streamingManager"
-import { responseCache } from "./utils/responseCache"
+} from "./utils/errorBoundary.js"
+import { endpointCache } from "./utils/endpointCache.js"
+import { connectionPool } from "./utils/connectionPool.js"
+import { streamingManager } from "./utils/streamingManager.js"
+import { streamCoordinator } from "./utils/streamCoordinator.js"
+import { responseCache } from "./utils/responseCache.js"
 
 export class CopilotAPIServer {
   private app: Hono
@@ -468,7 +472,7 @@ export class CopilotAPIServer {
     })
 
     // Handle unsupported HTTP methods for chat completions endpoint
-    this.app.all("/v1/chat/completions", async (c, next) => {
+    this.app.all("/v1/chat/completions", async (c, next): Promise<Response | void> => {
       if (c.req.method !== "POST") {
         const errorResponse = createAPIErrorResponse(
           `Method ${c.req.method} not allowed. Only POST is supported.`,
@@ -487,7 +491,7 @@ export class CopilotAPIServer {
       async (c) => {
         // PERFORMANCE OPTIMIZATION: Use already-parsed body from requestSize middleware
         // This eliminates double JSON parsing (requestSize + zValidator)
-        const parsedBody = c.get('parsedBody') as any
+        const parsedBody = (c as any).get('parsedBody')
 
         if (!parsedBody) {
           const errorResponse = createAPIErrorResponse(
@@ -598,6 +602,83 @@ export class CopilotAPIServer {
               return c.json(errorResponse, 503)
             }
 
+            // Intelligent ping handling (configurable): off | suppress | enhance
+            const pingHandling = String(process.env.PING_HANDLING ?? 'off').toLowerCase() as 'off' | 'suppress' | 'enhance'
+            const MIN_STREAM_TOKENS = Number(process.env.PING_MIN_TOKENS ?? process.env.STREAM_MIN_TOKENS ?? 4)
+            const effectiveBody: typeof body = { ...body }
+
+            const isString = (v: unknown): v is string => typeof v === 'string'
+            const normalize = (s: string) => s.trim().toLowerCase()
+            const smallPingSet = new Set(['ping','hello','hi','hey','test','ok'])
+
+            const extractPlainText = (msg: any): string => {
+              const content = msg?.content
+              if (isString(content)) return content
+              if (Array.isArray(content)) {
+                const t = content.find((b: any) => isString(b?.text))
+                if (t && isString(t.text)) return t.text
+              }
+              return ''
+            }
+
+            const isStreamingReq = effectiveBody?.stream === true
+
+            const isLikelyPing = (() => {
+              try {
+                // STRICT: only consider streaming, temp=0, and single short user message
+                if (!isStreamingReq) return false
+                if ((effectiveBody.temperature ?? null) !== 0) return false
+                if (!Array.isArray(effectiveBody.messages) || effectiveBody.messages.length !== 1) return false
+                const m = effectiveBody.messages[0]
+                if (!m || (m as any).role !== 'user') return false
+
+                const text = normalize(extractPlainText(m))
+                if (!text) return false
+
+                // Heuristics: very short and simple
+                const shortEnough = text.length <= 6 && text.split(/\s+/).length <= 2
+                if (shortEnough && smallPingSet.has(text)) return true
+                return false
+              } catch { return false }
+            })()
+
+            // Handle ping according to PING_HANDLING
+            // If handling is off but a ping is detected, log at INFO and proceed unchanged
+            if (pingHandling === 'off' && isLikelyPing) {
+              try {
+                const m = Array.isArray(effectiveBody.messages) ? (effectiveBody.messages as any[])[0] : null
+                const pingText = m ? normalize(extractPlainText(m)) : ''
+                logger.info('PING', `Detected ping-style request (handling=off). text="${pingText}" len=${pingText.length} max_tokens=${String(effectiveBody.max_tokens)} stream=${String(effectiveBody.stream)} temp=${String(effectiveBody.temperature)}`)
+              } catch {}
+            }
+
+            if (pingHandling !== 'off' && isStreamingReq && typeof effectiveBody.max_tokens === 'number' && effectiveBody.max_tokens <= 1 && isLikelyPing) {
+              try {
+                const m = Array.isArray(effectiveBody.messages) ? (effectiveBody.messages as any[])[0] : null
+                const pingText = m ? normalize(extractPlainText(m)) : ''
+                logger.info('PING', `Detected ping-style request. mode=${pingHandling} text="${pingText}" len=${pingText.length} original_max_tokens=${String(body.max_tokens ?? 'unset')} stream=${String(effectiveBody.stream)} temp=${String(effectiveBody.temperature)}`)
+              } catch {}
+
+              if (pingHandling === 'suppress') {
+                // Short-circuit: do not call upstream, emit DONE immediately
+                return streamSSE(c, async (stream) => {
+                  const streamId = `stream-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
+                  this.trackStream(streamId)
+                  streamCoordinator.markLayerActive(streamId, 'serverCleanup')
+                  streamCoordinator.registerCleanupCallback(streamId, () => {
+                    this.cleanupStreamGuaranteed(streamId, 'ping suppress')
+                  })
+                  logger.info('PING', 'Suppressing ping response: streaming [DONE]')
+                  await stream.writeSSE({ data: '[DONE]' })
+                  await streamCoordinator.initiateCleanup(streamId, 'ping suppress done', 'server')
+                })
+              } else if (pingHandling === 'enhance') {
+                const before = effectiveBody.max_tokens
+                effectiveBody.max_tokens = Math.max(MIN_STREAM_TOKENS, 2)
+                logger.info('PING', `Enhancing ping response: bump max_tokens ${before} -> ${effectiveBody.max_tokens}`)
+              }
+            }
+
             // Use Hono's streamSSE for streaming responses with error boundaries
             return streamSSE(c, async (stream) => {
               const streamId = `stream-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
@@ -607,11 +688,17 @@ export class CopilotAPIServer {
               // Prevents memory leaks from abandoned streams
               this.trackStream(streamId)
 
+              // Register with global coordinator
+              streamCoordinator.markLayerActive(streamId, 'serverCleanup')
+              streamCoordinator.registerCleanupCallback(streamId, () => {
+                this.cleanupStreamGuaranteed(streamId, 'coordinator callback')
+              })
+
               try {
                 // Wrap streaming operation in error boundary
                 const result = await StreamingErrorBoundary.handleStreamingOperation(
                   async () => {
-                    await this.forwardToCopilotStreaming(token, body, endpoint, stream, streamId)
+                    await this.forwardToCopilotStreaming(token, effectiveBody, endpoint, stream, streamId)
                   },
                   streamId,
                   {
@@ -649,9 +736,9 @@ export class CopilotAPIServer {
                   )
                 }
               } finally {
-                // GUARANTEED CLEANUP: Always untrack stream, even on unexpected errors
-                // This prevents memory leaks in activeStreams and streamStartTimes maps
-                await this.cleanupStreamGuaranteed(streamId, 'finally block')
+                // GUARANTEED CLEANUP: Use coordinator for final cleanup
+                // This prevents memory leaks and coordinates with all other cleanup paths
+                await streamCoordinator.initiateCleanup(streamId, 'finally block', 'server')
               }
             })
           } else {
@@ -789,7 +876,10 @@ export class CopilotAPIServer {
    * Build request body based on format
    */
   private buildRequestBody(request: ChatCompletionRequest, format: number): any {
-    const transformedMessages = transformMessagesForCopilot(request.messages)
+    const transformedMessages = transformMessagesForCopilot(request.messages as Array<{
+      role: "system" | "user" | "assistant"
+      content: string | ContentBlock[]
+    }>)
     const safeStopParam = this.getSafeStopParam(request.stop)
 
     const baseRequest = {
@@ -892,7 +982,9 @@ export class CopilotAPIServer {
             `✅ Parallel discovery succeeded: ${attempt.url} (${result.value.responseTime}ms) - cancelled ${configs.length - 1} other attempts`
           )
 
-          return { url: attempt.url, requestBody: attempt.requestBody }
+          // IMPORTANT: return requestBody for the ACTUAL user request (not the discovery 'ping')
+          const actualRequestBody = this.buildRequestBody(request, attempt.config.format)
+          return { url: attempt.url, requestBody: actualRequestBody }
         }
       }
 
@@ -1239,8 +1331,10 @@ export class CopilotAPIServer {
     stream.onAbort(() => {
       logger.info('STREAM', `Client aborted streaming request ${streamId}`)
       isAborted = true
-      reader.releaseLock()
-      this.cleanupStreamGuaranteed(streamId, 'client abort (unified)')
+      // Release the local reader lock if present (safe and prevents leaks)
+      try { reader.releaseLock() } catch {}
+      // Use coordinator for abort cleanup
+      streamCoordinator.initiateCleanup(streamId, 'client abort (unified)', 'server-unified')
     })
 
     // STABILITY FIX: Set up chunk timeout monitoring without throwing inside setInterval
@@ -1299,7 +1393,7 @@ export class CopilotAPIServer {
 
         // Process complete lines from buffer
         const { completeLines, remainingBuffer } = this.extractCompleteLines(buffer)
-        buffer = remainingBuffer
+        buffer = remainingBuffer as Buffer<ArrayBuffer>
 
         for (const line of completeLines) {
           if (line.startsWith('data: ')) {
@@ -1307,15 +1401,10 @@ export class CopilotAPIServer {
             if (data === '[DONE]') {
               await stream.writeSSE({ data: '[DONE]' })
 
-              // STABILITY FIX: Cancel reader to prevent races after [DONE]
-              // This ensures clean shutdown and reduces controller race conditions
-              try {
-                await reader.cancel('done')
-              } catch (cancelError) {
-                logger.debug('STREAMING_UNIFIED', `Failed to cancel reader for stream ${streamId}: ${cancelError}`)
-              }
-
+              // STABILITY FIX: Use coordinator for [DONE] cleanup to prevent race conditions
+              // This ensures proper coordination between all cleanup paths
               console.log(`✅ Stream ${streamId} finished with [DONE] signal${actualModel ? ` (model: ${actualModel})` : ''}`)
+              await streamCoordinator.initiateCleanup(streamId, 'done signal', 'server-unified')
               return
             }
 
@@ -2317,8 +2406,8 @@ export class CopilotAPIServer {
    * Start the server with HTTP/1.1 and optional HTTP/2 support
    */
   async start(): Promise<void> {
-    // Start HTTP/1.1 server (Bun)
-    const server = Bun.serve({
+    // Start HTTP/1.1 server on Node using @hono/node-server
+    const server = serve({
       port: this.port,
       hostname: this.hostname,
       fetch: this.app.fetch,

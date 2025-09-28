@@ -3,7 +3,7 @@
  * Provides utilities for debugging and handling role normalization issues
  */
 
-import { logger } from "./logger"
+import { logger } from "./logger.js"
 
 export interface RoleNormalizationResult {
   original: string

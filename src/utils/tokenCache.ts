@@ -3,7 +3,7 @@
  * Caches access tokens in memory to eliminate file I/O overhead
  */
 
-import { logger } from './logger'
+import { logger } from './logger.js'
 
 export interface CachedToken {
   token: string

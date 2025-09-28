@@ -3,15 +3,15 @@
  * Handles GitHub Copilot authentication operations and token management
  */
 
-import { logger } from '../utils/logger'
-import { createAPIErrorResponse } from '../types/errors'
-import { GitHubCopilotAuth } from '../auth'
+import { logger } from '../utils/logger.js'
+import { createAPIErrorResponse } from '../types/errors.js'
+import { GitHubCopilotAuth } from '../auth.js'
 import { 
   ERROR_CODES,
   HTTP_STATUS,
   TIMEOUT_CONSTANTS 
-} from '../constants'
-import { createContextualLogger } from '../utils/contextualLogger'
+} from '../constants/index.js'
+import { createContextualLogger } from '../utils/contextualLogger.js'
 
 export interface AuthResult {
   success: boolean

@@ -3,10 +3,10 @@
  * Centralizes security-related configuration including CORS settings
  *
  * @deprecated This module is being replaced by the centralized config system.
- * Use `import { config } from './config'` instead.
+ * Use `import { config } from './config.js'` instead.
  */
 
-import { config } from './index'
+import { config } from './index.js'
 
 export interface CORSConfig {
   origins: string[]
