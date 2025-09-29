@@ -145,10 +145,16 @@ export class StreamingManager {
           }
 
         } catch (error) {
-          logger.error('STREAMING_MANAGER', `Stream ${streamId} error: ${error}`)
+          const msg = (error instanceof Error) ? error.message : String(error)
+          if (msg.includes('Invalid state') && (msg.includes('Releasing reader') || msg.includes('reader'))) {
+            // Non-fatal race during shutdown; treat as debug to avoid noisy logs
+            logger.debug('STREAMING_MANAGER', `Non-fatal stream state for ${streamId}: ${msg}`)
+          } else {
+            logger.error('STREAMING_MANAGER', `Stream ${streamId} error: ${msg}`)
+          }
 
-          // Use coordinator for error cleanup
-          await streamCoordinator.initiateCleanup(streamId, `error: ${error}`, 'streamingManager')
+          // Use coordinator for error cleanup (idempotent)
+          await streamCoordinator.initiateCleanup(streamId, `error: ${msg}`, 'streamingManager')
         }
       },
 
@@ -331,7 +337,7 @@ export class StreamingManager {
 
     // STABILITY FIX: Safe controller closure with state tracking
     this.safeControllerClose(streamId, controller, 'normal completion')
-    this.cleanupStream(streamId)
+    await streamCoordinator.initiateCleanup(streamId, 'normal completion', 'streamingManager')
   }
 
   /**

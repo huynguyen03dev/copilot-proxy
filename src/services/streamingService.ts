@@ -305,7 +305,7 @@ export class StreamProcessor {
     stream.onAbort(() => {
       logger.info('STREAM_PROCESSOR', `Client aborted stream ${streamId}`)
       isAborted = true
-      reader.releaseLock()
+      try { reader.releaseLock() } catch {}
     })
 
     try {
@@ -346,7 +346,7 @@ export class StreamProcessor {
       throw error
     } finally {
       if (!isAborted) {
-        reader.releaseLock()
+        try { reader.releaseLock() } catch {}
       }
     }
   }

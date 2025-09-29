@@ -19,7 +19,7 @@ const StreamingConfigSchema = z.object({
   chunkTimeout: z.number().min(1000).default(30000), // 30 seconds
   streamTimeout: z.number().min(1000).default(300000), // 5 minutes
   backpressureThreshold: z.number().min(1024).default(524288), // 512KB
-  rateLimitInterval: z.number().min(100).default(1000), // 1 second
+
 })
 
 const LoggingConfigSchema = z.object({
@@ -116,7 +116,7 @@ function parseEnvironmentConfig(): Config {
       chunkTimeout: parseInteger(env.CHUNK_TIMEOUT, 30000),
       streamTimeout: parseInteger(env.STREAM_TIMEOUT, 300000),
       backpressureThreshold: parseInteger(env.BACKPRESSURE_THRESHOLD, 524288),
-      rateLimitInterval: parseInteger(env.RATE_LIMIT_INTERVAL, 1000),
+
     },
     logging: {
       level: (env.LOG_LEVEL as any) || 'info',
@@ -174,7 +174,7 @@ function createConfig(): Config {
       // Production optimizations
       validatedConfig.server.hostname = validatedConfig.server.hostname === '127.0.0.1' ? '0.0.0.0' : validatedConfig.server.hostname
       validatedConfig.server.maxConcurrentStreams = Math.max(validatedConfig.server.maxConcurrentStreams, 200)
-      validatedConfig.streaming.rateLimitInterval = Math.min(validatedConfig.streaming.rateLimitInterval, 500)
+
       validatedConfig.logging.level = validatedConfig.logging.level === 'debug' ? 'info' : validatedConfig.logging.level
       validatedConfig.logging.enableProgressLogs = false // Disable progress logs in production to reduce I/O overhead
       validatedConfig.monitoring.enableGarbageCollection = true

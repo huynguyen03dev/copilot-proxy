@@ -227,7 +227,7 @@ describe("Error Scenario Integration Tests", () => {
       
       // Some should succeed, some might be limited
       responses.forEach(response => {
-        expect([200, 429, 503].includes(response.status)).toBe(true)
+        expect([200, 503].includes(response.status)).toBe(true)
       })
 
       // Clean up successful streams

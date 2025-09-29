@@ -411,7 +411,7 @@ describe("Enhanced Integration Tests", () => {
       
       // Some should succeed, some might be limited
       responses.forEach(response => {
-        expect([200, 429, 503].includes(response.status)).toBe(true)
+        expect([200, 503].includes(response.status)).toBe(true)
       })
     })
 
@@ -575,7 +575,7 @@ describe("Enhanced Integration Tests", () => {
 
       try {
         const response = await Promise.race([fetchPromise, timeoutPromise])
-        expect([200, 429, 503].includes((response as Response).status)).toBe(true)
+        expect([200, 503].includes((response as Response).status)).toBe(true)
       } catch (error: any) {
         if (error.message === "Test timeout") {
           // Timeout is acceptable for this test

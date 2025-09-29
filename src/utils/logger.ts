@@ -310,7 +310,7 @@ export class Logger {
   streamComplete(config: StreamingLogConfig): void {
     if (!this.config.enableProgressLogs) return
 
-    let message = `✅ Stream completed: ${config.chunkCount} chunks`
+    let message = `✅ Stream ${config.streamId} completed: ${config.chunkCount} chunks`
 
     if (config.duration) {
       const durationSec = Math.round(config.duration / 1000)
