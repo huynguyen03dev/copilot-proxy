@@ -101,11 +101,11 @@ export class CopilotAPIServer {
 
   // Connection management
   private activeStreams = new Set<string>()
-  private streamingRateLimit = new Map<string, number>()
+
   private streamStartTimes = new Map<string, number>()  // Track stream start times for cleanup sweeper
   private streamTimeouts = new Map<string, NodeJS.Timeout>()  // Track stream timeout handles
   private readonly MAX_CONCURRENT_STREAMS = config.server.maxConcurrentStreams
-  private readonly RATE_LIMIT_INTERVAL = config.streaming.rateLimitInterval
+
   private readonly IS_TEST_ENVIRONMENT = process.env.NODE_ENV === 'test'
   private readonly STREAM_TIMEOUT_MS = TIMEOUT_CONSTANTS.STREAM_TIMEOUT_MS
 
@@ -337,10 +337,6 @@ export class CopilotAPIServer {
           bytesPerSecond: Math.round(this.streamMetrics.totalBytes / (uptime / 1000))
         },
         memory: process.memoryUsage(),
-        rateLimiting: {
-          activeClients: this.streamingRateLimit.size,
-          intervalMs: this.RATE_LIMIT_INTERVAL
-        },
         connectionPool: connectionPool.getOverallStats(),
         streamingManager: streamingManager.getStreamingStats(),
         timestamp: new Date().toISOString()
@@ -571,17 +567,6 @@ export class CopilotAPIServer {
 
           // Handle streaming vs non-streaming requests
           if (body.stream) {
-            // Check rate limiting and connection limits
-            const clientId = this.getClientId(c)
-
-            if (!this.checkStreamingRateLimit(clientId)) {
-              const errorResponse = createAPIErrorResponse(
-                "Rate limit exceeded. Please wait before making another streaming request.",
-                "rate_limit_error",
-                "rate_limit_exceeded"
-              )
-              return c.json(errorResponse, 429)
-            }
 
             if (this.activeStreams.size >= this.MAX_CONCURRENT_STREAMS) {
               const errorResponse = createAPIErrorResponse(
@@ -664,6 +649,8 @@ export class CopilotAPIServer {
                 return streamSSE(c, async (stream) => {
                   const streamId = `stream-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
                   this.trackStream(streamId)
+                  // Register with coordinator for proper lifecycle
+                  streamCoordinator.registerStream(streamId)
                   streamCoordinator.markLayerActive(streamId, 'serverCleanup')
                   streamCoordinator.registerCleanupCallback(streamId, () => {
                     this.cleanupStreamGuaranteed(streamId, 'ping suppress')
@@ -689,6 +676,7 @@ export class CopilotAPIServer {
               this.trackStream(streamId)
 
               // Register with global coordinator
+              streamCoordinator.registerStream(streamId)
               streamCoordinator.markLayerActive(streamId, 'serverCleanup')
               streamCoordinator.registerCleanupCallback(streamId, () => {
                 this.cleanupStreamGuaranteed(streamId, 'coordinator callback')
@@ -1315,6 +1303,7 @@ export class CopilotAPIServer {
       }
     } else {
       reader = response.body.getReader()
+      streamCoordinator.registerReader(streamId, reader)
     }
 
     const decoder = new TextDecoder()
@@ -1478,9 +1467,7 @@ export class CopilotAPIServer {
       throw error
     } finally {
       clearInterval(chunkTimeoutInterval)
-      if (!isAborted) {
-        reader.releaseLock()
-      }
+      await streamCoordinator.initiateCleanup(streamId, 'finally (unified)', 'server-unified')
     }
   }
 
@@ -1518,6 +1505,7 @@ export class CopilotAPIServer {
     if (!reader) {
       throw new Error("No response body reader available")
     }
+    streamCoordinator.registerReader(streamId, reader)
 
     const decoder = new TextDecoder()
     let buffer = ""
@@ -1533,11 +1521,9 @@ export class CopilotAPIServer {
     stream.onAbort(() => {
       console.log(`🚫 Client aborted streaming request ${streamId}`)
       isAborted = true
-      reader.releaseLock()
-
-      // PERFORMANCE OPTIMIZATION: Ensure stream cleanup on client abort
-      // This prevents memory leaks when clients disconnect unexpectedly
-      this.cleanupStreamGuaranteed(streamId, 'client abort')
+      // Use coordinator for abort cleanup (deprecated path)
+      streamCoordinator.initiateCleanup(streamId, 'client abort (deprecated)', 'server-deprecated')
+      try { reader.releaseLock() } catch {}
     })
 
     // STABILITY FIX: Set up chunk timeout monitoring without throwing inside setInterval
@@ -1668,9 +1654,7 @@ export class CopilotAPIServer {
       throw error
     } finally {
       clearInterval(chunkTimeoutInterval)
-      if (!isAborted) {
-        reader.releaseLock()
-      }
+      await streamCoordinator.initiateCleanup(streamId, 'finally (deprecated)', 'server-deprecated')
     }
   }
 
@@ -1694,6 +1678,7 @@ export class CopilotAPIServer {
       // Create optimized stream using streaming manager
       const optimizedStream = await streamingManager.startStream(streamId, response.body)
       const reader = optimizedStream.getReader()
+      streamCoordinator.registerReader(streamId, reader)
 
       const decoder = new TextDecoder()
       let buffer = ""
@@ -1709,11 +1694,9 @@ export class CopilotAPIServer {
       stream.onAbort(() => {
         console.log(`🚫 Client aborted streaming request ${streamId}`)
         isAborted = true
-        reader.releaseLock()
-
-        // PERFORMANCE OPTIMIZATION: Ensure stream cleanup on client abort (optimized path)
-        // This prevents memory leaks when clients disconnect unexpectedly
-        this.cleanupStreamGuaranteed(streamId, 'client abort (optimized)')
+        // Use coordinator for abort cleanup (optimized path)
+        streamCoordinator.initiateCleanup(streamId, 'client abort (optimized)', 'server-optimized')
+        try { reader.releaseLock() } catch {}
       })
 
       // STABILITY FIX: Set up chunk timeout monitoring without throwing inside setInterval
@@ -1856,9 +1839,7 @@ export class CopilotAPIServer {
         throw error
       } finally {
         clearInterval(chunkTimeoutInterval)
-        if (!isAborted) {
-          reader.releaseLock()
-        }
+        await streamCoordinator.initiateCleanup(streamId, 'finally (optimized)', 'server-optimized')
       }
     } catch (error) {
       logger.error('STREAMING_MANAGER', `Failed to create optimized stream for ${streamId}: ${error}`)
@@ -1973,13 +1954,6 @@ export class CopilotAPIServer {
       logger.info('MONITOR', `📊 Total requests: ${this.streamMetrics.totalRequests}`)
       logger.info('MONITOR', `✅ Success rate: ${this.getSuccessRate()}%`)
 
-      // Clean up old rate limit entries (older than 5 minutes)
-      const fiveMinutesAgo = Date.now() - 300000
-      for (const [clientId, timestamp] of this.streamingRateLimit.entries()) {
-        if (timestamp < fiveMinutesAgo) {
-          this.streamingRateLimit.delete(clientId)
-        }
-      }
 
       // PERFORMANCE OPTIMIZATION: Sweep stuck streams to prevent memory leaks
       // Remove streams that have been active longer than the timeout threshold
@@ -1995,43 +1969,10 @@ export class CopilotAPIServer {
   /**
    * Get client identifier for rate limiting
    */
-  private getClientId(c: any): string {
-    // Use IP address as client identifier
-    const forwarded = c.req.header('x-forwarded-for')
-    const ip = forwarded ? forwarded.split(',')[0] : c.req.header('x-real-ip') || 'unknown'
-    return ip
-  }
 
   /**
    * Check streaming rate limit for a client
    */
-  private checkStreamingRateLimit(clientId: string): boolean {
-    // In test environment, be more lenient with rate limiting
-    if (this.IS_TEST_ENVIRONMENT) {
-      // Allow more frequent requests in test environment
-      const testInterval = this.RATE_LIMIT_INTERVAL / 10 // 100ms instead of 1000ms
-      const now = Date.now()
-      const lastRequest = this.streamingRateLimit.get(clientId) || 0
-
-      if (now - lastRequest < testInterval) {
-        return false
-      }
-
-      this.streamingRateLimit.set(clientId, now)
-      return true
-    }
-
-    // Production rate limiting
-    const now = Date.now()
-    const lastRequest = this.streamingRateLimit.get(clientId) || 0
-
-    if (now - lastRequest < this.RATE_LIMIT_INTERVAL) {
-      return false
-    }
-
-    this.streamingRateLimit.set(clientId, now)
-    return true
-  }
 
   /**
    * Track an active streaming connection

@@ -44,15 +44,8 @@ describe("Streaming Error Handling Tests", () => {
       body: JSON.stringify(request)
     })
 
-    // Rate limiting should either work (429) or both requests succeed (200)
-    // depending on timing and server load
-    expect([200, 429].includes(response2.status)).toBe(true)
-
-    if (response2.status === 429) {
-      const errorData = await response2.json()
-      expect(errorData.error.type).toBe("rate_limit_error")
-      expect(errorData.error.code).toBe("rate_limit_exceeded")
-    }
+    // Should not rate-limit streaming; second request should succeed or hit capacity
+    expect([200, 503].includes(response2.status)).toBe(true)
   })
 
   it("should handle malformed streaming requests", async () => {
@@ -69,8 +62,8 @@ describe("Streaming Error Handling Tests", () => {
     })
 
     // Malformed requests should be handled gracefully
-    // Could be 400 (validation error) or 429 (rate limited) or 500 (server error)
-    expect([400, 429, 500].includes(response.status)).toBe(true)
+    // Could be 400 (validation error) or 500 (server error)
+    expect([400, 500].includes(response.status)).toBe(true)
   })
 
   it("should return proper headers for streaming responses", async () => {
@@ -81,8 +74,6 @@ describe("Streaming Error Handling Tests", () => {
       max_tokens: 10
     }
 
-    // Wait for rate limit to reset
-    await new Promise(resolve => setTimeout(resolve, 1100))
 
     const response = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
@@ -104,7 +95,6 @@ describe("Streaming Error Handling Tests", () => {
     }
 
     // Wait for rate limit to reset
-    await new Promise(resolve => setTimeout(resolve, 1100))
 
     const controller = new AbortController()
     const response = fetch(`${baseUrl}/v1/chat/completions`, {
