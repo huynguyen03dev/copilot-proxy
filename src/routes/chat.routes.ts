@@ -9,31 +9,26 @@ import { logRoleNormalizationStats } from "../utils/roleNormalization.js"
 import { getContentStats } from "../utils/content.js"
 import { logger } from "../utils/logger.js"
 import { config } from "../config/index.js"
+import { ChatService } from "../services/chat/chatService.js"
+import { StreamMonitorService } from "../services/streamMonitorService.js"
 
 /**
  * Chat completions route handlers
  * Provides the main chat completions endpoint with streaming and non-streaming support
  */
 
-export interface ChatHandlers {
-  forwardToCopilot: (token: string, request: ChatCompletionRequest, endpoint: string) => Promise<any>
-  forwardToCopilotStreaming: (token: string, request: ChatCompletionRequest, endpoint: string, stream: any, streamId: string) => Promise<void>
-  handleStreamingError: (stream: any, error: Error, context: string) => Promise<void>
-  trackStream: (streamId: string) => void
-  cleanupStreamGuaranteed: (streamId: string, reason: string) => Promise<void>
-  updateStreamMetrics: (streamId: string, success: boolean, duration: number) => void
-  activeStreams: Set<string>
+export interface ChatRouteDependencies {
+  chatService: ChatService
+  streamMonitor: StreamMonitorService
   maxConcurrentStreams: number
-  totalRequests: number
-  successfulStreams: number
   isTestEnvironment: boolean
 }
 
 /**
  * Create chat routes
- * @param handlers - Object containing handler methods from the server instance
+ * @param deps - Dependencies required by chat routes (ChatService, StreamMonitorService, etc.)
  */
-export function createChatRoutes(handlers: ChatHandlers): Hono {
+export function createChatRoutes(deps: ChatRouteDependencies): Hono {
   const app = new Hono()
 
   /**
@@ -133,9 +128,9 @@ export function createChatRoutes(handlers: ChatHandlers): Hono {
 
       // Handle streaming vs non-streaming requests
       if (body.stream) {
-        return handleStreamingRequest(c, body, token, endpoint, handlers)
+        return handleStreamingRequest(c, body, token, endpoint, deps)
       } else {
-        return handleNonStreamingRequest(c, body, token, endpoint, handlers)
+        return handleNonStreamingRequest(c, body, token, endpoint, deps)
       }
     } catch (error) {
       logger.error('COPILOT_API', `API request failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -159,10 +154,13 @@ async function handleStreamingRequest(
   body: ChatCompletionRequest,
   token: string,
   endpoint: string,
-  handlers: ChatHandlers
+  deps: ChatRouteDependencies
 ): Promise<Response> {
   // Check capacity
-  if (handlers.activeStreams.size >= handlers.maxConcurrentStreams) {
+  const metrics = deps.streamMonitor.getMetrics()
+  const activeCount = deps.streamMonitor.getActiveStreamCount()
+  
+  if (activeCount >= deps.maxConcurrentStreams) {
     const errorResponse = createAPIErrorResponse(
       "Server is at maximum capacity for streaming requests. Please try again later.",
       "capacity_error",
@@ -172,7 +170,7 @@ async function handleStreamingRequest(
   }
 
   // Lightweight overload guard to shed load before admission
-  if (handlers.totalRequests - handlers.successfulStreams > handlers.maxConcurrentStreams * 4) {
+  if (metrics.totalRequests - metrics.successfulStreams > deps.maxConcurrentStreams * 4) {
     const errorResponse = createAPIErrorResponse(
       "Server is currently overloaded. Please try again shortly.",
       "server_overloaded",
@@ -189,7 +187,7 @@ async function handleStreamingRequest(
     const streamId = `stream-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
     const startTime = Date.now()
 
-    handlers.trackStream(streamId)
+    deps.streamMonitor.trackStream(streamId)
 
     try {
       // Import here to avoid circular dependencies
@@ -201,19 +199,20 @@ async function handleStreamingRequest(
       streamCoordinator.registerStream(streamId)
       streamCoordinator.markLayerActive(streamId, 'serverCleanup')
       streamCoordinator.registerCleanupCallback(streamId, () => {
-        handlers.cleanupStreamGuaranteed(streamId, 'coordinator callback')
+        deps.streamMonitor.cleanupStream(streamId, 'coordinator callback')
       })
 
       // Wrap streaming operation in error boundary
       const result = await StreamingErrorBoundary.handleStreamingOperation(
         async () => {
-          await handlers.forwardToCopilotStreaming(token, effectiveBody, endpoint, stream, streamId)
+          // Use ChatService for streaming (business logic fully extracted)
+          await deps.chatService.forwardToCopilotStreaming(token, effectiveBody, endpoint, stream, streamId)
         },
         streamId,
         {
           retryAttempts: 1,
           retryDelay: 1000,
-          timeoutMs: handlers.isTestEnvironment ? 30000 : 60000,
+          timeoutMs: deps.isTestEnvironment ? 30000 : 60000,
           category: 'STREAMING'
         }
       )
@@ -221,7 +220,7 @@ async function handleStreamingRequest(
       const duration = Date.now() - startTime
 
       if (result.success) {
-        handlers.updateStreamMetrics(streamId, true, duration)
+        deps.streamMonitor.updateStreamMetrics(streamId, true, duration)
         streamLogger.complete({
           streamId,
           chunkCount: 0,
@@ -229,7 +228,7 @@ async function handleStreamingRequest(
           startTime
         })
       } else {
-        handlers.updateStreamMetrics(streamId, false, duration)
+        deps.streamMonitor.updateStreamMetrics(streamId, false, duration)
 
         const streamingError = result.error || StreamingErrorBoundary.createStreamingError(
           'STREAM_FAILED',
@@ -237,11 +236,8 @@ async function handleStreamingRequest(
           streamId
         )
 
-        await handlers.handleStreamingError(
-          stream,
-          new Error(streamingError.message),
-          `streaming-boundary-${streamId}`
-        )
+        // Log streaming error
+        logger.error('STREAM', `💥 Streaming error in streaming-boundary-${streamId}: ${streamingError.message}`)
       }
     } finally {
       // Import here to avoid circular dependencies
@@ -259,10 +255,11 @@ async function handleNonStreamingRequest(
   body: ChatCompletionRequest,
   token: string,
   endpoint: string,
-  handlers: ChatHandlers
+  deps: ChatRouteDependencies
 ): Promise<Response> {
   try {
-    const copilotResponse = await handlers.forwardToCopilot(token, body, endpoint)
+    // Use ChatService for non-streaming requests (business logic fully extracted)
+    const copilotResponse = await deps.chatService.forwardToCopilot(token, body, endpoint)
     const res = c.json(copilotResponse)
     res.headers.set('Content-Type', 'application/json; charset=UTF-8')
     return res

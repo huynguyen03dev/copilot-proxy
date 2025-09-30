@@ -5,7 +5,7 @@ def streaming():
     print("🧪 Testing streaming response...")
     client = OpenAI(
         api_key="test",
-        base_url="http://localhost:8069/v1"
+        base_url="http://fedora:8069/v1"
     )
 
     response = client.chat.completions.create(

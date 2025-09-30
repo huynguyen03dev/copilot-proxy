@@ -1,328 +1,182 @@
 /**
- * Streaming Service
- * Handles streaming request processing and endpoint discovery
+ * Consolidated Streaming Service
+ * Handles all streaming request processing with unified architecture
+ * 
+ * PHASE 3: Consolidation of three streaming methods into one
+ * - processStreamingResponse (deprecated) - REMOVED
+ * - processStreamingResponseUnified - CONSOLIDATED
+ * - processStreamingResponseOptimized - CONSOLIDATED
  */
 
-import { logger } from '../utils/logger.js'
-import {
-  TIMEOUT_CONSTANTS,
-  ENDPOINT_PATHS,
-  HTTP_HEADERS,
-  ERROR_CODES,
-  PERFORMANCE_CONSTANTS
-} from '../constants/index.js'
-import { 
-  ChatCompletionRequest, 
-  type EndpointAttempt 
-} from '../types.js'
+import { logger, streamLogger, modelLogger } from '../utils/logger.js'
 import { StreamingErrorBoundary } from '../utils/errorBoundary.js'
-import { connectionPool } from '../utils/connectionPool.js'
-import { endpointLogger } from '../utils/logger.js'
-import {
-  StringBuffer,
-  FastJSON,
-  PerformanceMonitor,
-  LRUCache
-} from '../utils/performanceOptimizer.js'
+import { streamCoordinator } from '../utils/streamCoordinator.js'
+import { streamingManager } from '../utils/streamingManager.js'
+import { config } from '../config/index.js'
+import { ChatCompletionRequest, ChatCompletionStreamChunk } from '../types.js'
+import { ResponseTransformService } from './responseTransformService.js'
 
-export interface StreamingEndpointConfig {
-  path: string
-  format: number
+/**
+ * Configuration options for streaming
+ */
+export interface StreamingOptions {
+  /** Enable performance optimizations (streaming manager, adaptive backpressure, etc.) */
+  useOptimizations?: boolean
+  /** Maximum buffer size before splitting chunks */
+  maxBufferSize?: number
+  /** Timeout for chunks in milliseconds */
+  chunkTimeout?: number
+  /** API URL for logging */
+  apiUrl?: string
 }
 
-export interface StreamingServiceConfig {
-  timeoutMs: number
-  maxRetries: number
-  enableOptimizations: boolean
-}
-
-const DEFAULT_STREAMING_CONFIG: StreamingServiceConfig = {
-  timeoutMs: TIMEOUT_CONSTANTS.STREAM_TIMEOUT_MS,
-  maxRetries: 3,
-  enableOptimizations: true
+const DEFAULT_STREAMING_OPTIONS: Required<StreamingOptions> = {
+  useOptimizations: true,
+  maxBufferSize: 64 * 1024, // 64KB
+  chunkTimeout: 30000, // 30 seconds
+  apiUrl: 'unknown'
 }
 
 /**
- * Service for handling streaming operations
+ * Consolidated Streaming Service
+ * 
+ * Merges all streaming logic into a single, configurable implementation:
+ * - Unified buffer management
+ * - Adaptive optimization level
+ * - Consolidated backpressure handling
+ * - Smart chunk splitting
  */
 export class StreamingService {
-  private config: StreamingServiceConfig
-  private endpointCache: LRUCache<string, StreamingEndpointConfig>
-  private performanceMonitor: PerformanceMonitor
-
-  constructor(config: Partial<StreamingServiceConfig> = {}) {
-    this.config = { ...DEFAULT_STREAMING_CONFIG, ...config }
-    this.endpointCache = new LRUCache<string, StreamingEndpointConfig>(PERFORMANCE_CONSTANTS.DEFAULT_CACHE_SIZE)
-    this.performanceMonitor = PerformanceMonitor
+  private responseTransformService: ResponseTransformService
+  private streamMetrics: {
+    totalChunks: number
+    totalBytes: number
   }
 
-  /**
-   * Handle streaming request with endpoint discovery and error handling
-   */
-  async handleStreamingRequest(
-    token: string,
-    request: ChatCompletionRequest,
-    endpoint: string,
-    stream: any,
-    streamId: string
-  ): Promise<void> {
-    logger.debug('STREAMING_SERVICE', `Starting streaming request ${streamId}`)
-
-    // Set up timeout for the entire streaming request
-    const streamTimeout = this.setupStreamTimeout(stream, streamId)
-
-    try {
-      // Discover optimal endpoint
-      const streamingEndpoint = await this.discoverStreamingEndpoint(token, request, endpoint)
-      
-      // Process streaming response
-      await this.processStreamingResponse(streamingEndpoint, token, request, stream, streamId)
-      
-      clearTimeout(streamTimeout)
-      logger.info('STREAMING_SERVICE', `Streaming request ${streamId} completed successfully`)
-      
-    } catch (error) {
-      clearTimeout(streamTimeout)
-      const streamError = error instanceof Error ? error : new Error("Unknown streaming error")
-      logger.error('STREAMING_SERVICE', `Streaming request ${streamId} failed: ${streamError.message}`)
-      throw streamError
+  constructor() {
+    this.responseTransformService = new ResponseTransformService()
+    this.streamMetrics = {
+      totalChunks: 0,
+      totalBytes: 0
     }
   }
 
   /**
-   * Discover optimal streaming endpoint
-   */
-  private async discoverStreamingEndpoint(
-    token: string,
-    request: ChatCompletionRequest,
-    baseEndpoint: string
-  ): Promise<string> {
-    const endpointConfigs = this.getEndpointConfigs()
-    const attempts: EndpointAttempt[] = []
-    let lastError: Error | null = null
-
-    for (const config of endpointConfigs) {
-      const apiUrl = `${baseEndpoint}${config.path}`
-
-      try {
-        const requestBody = this.buildStreamingRequestBody(request, config.format)
-        
-        const response = await fetch(apiUrl, {
-          method: "POST",
-          headers: this.buildRequestHeaders(token),
-          body: JSON.stringify(requestBody),
-        })
-
-        attempts.push({ url: apiUrl, format: 0, success: true, status: response.status })
-
-        if (response.ok) {
-          // Log successful discovery
-          endpointLogger.discovery(attempts, apiUrl)
-          
-          // Warmup connections for performance
-          await this.warmupConnections(apiUrl)
-          
-          return apiUrl
-        } else if (response.status === 404) {
-          continue
-        } else {
-          // Non-404 error, log and continue
-          const errorText = await response.text()
-          attempts[attempts.length - 1].error = errorText
-          lastError = new Error(`HTTP ${response.status}: ${errorText}`)
-          continue
-        }
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : "Unknown error"
-        attempts.push({ url: apiUrl, format: 0, success: false, status: 0, error: errorMsg })
-        lastError = error instanceof Error ? error : new Error("Unknown error")
-        continue
-      }
-    }
-
-    // All endpoints failed
-    const finalError = lastError || new Error("All Copilot endpoints failed for streaming request")
-    logger.error('STREAMING_SERVICE', `Endpoint discovery failed: ${finalError.message}`)
-    throw finalError
-  }
-
-  /**
-   * Process streaming response from discovered endpoint
-   */
-  private async processStreamingResponse(
-    apiUrl: string,
-    token: string,
-    request: ChatCompletionRequest,
-    stream: any,
-    streamId: string
-  ): Promise<void> {
-    const requestBody = this.buildStreamingRequestBody(request, 0) // Use standard format
-
-    const response = await fetch(apiUrl, {
-      method: "POST",
-      headers: this.buildRequestHeaders(token),
-      body: JSON.stringify(requestBody),
-    })
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${await response.text()}`)
-    }
-
-    // Delegate to stream processor
-    const streamProcessor = new StreamProcessor()
-    await streamProcessor.processStream(response, stream, request, streamId, this.config.enableOptimizations)
-  }
-
-  /**
-   * Build streaming request body based on format
-   */
-  private buildStreamingRequestBody(request: ChatCompletionRequest, format: number): any {
-    const safeStopParam = this.getSafeStopParam(request.stop)
-
-    const baseRequest = {
-      model: request.model,
-      messages: request.messages, // Assume already transformed
-      temperature: request.temperature || 0.7,
-      max_tokens: request.max_tokens,
-      stream: true,
-      top_p: request.top_p,
-      ...safeStopParam,
-    }
-
-    switch (format) {
-      case 0:
-        return baseRequest
-      case 1:
-        return { ...baseRequest, intent: true, n: 1 }
-      case 2:
-        return {
-          prompt: request.messages.map(m => `${m.role}: ${m.content}`).join('\n'),
-          max_tokens: request.max_tokens || 150,
-          temperature: request.temperature || 0.7,
-          top_p: request.top_p || 1,
-          n: 1,
-          stream: true,
-          ...safeStopParam,
-        }
-      default:
-        return baseRequest
-    }
-  }
-
-  /**
-   * Build request headers
-   */
-  private buildRequestHeaders(token: string): Record<string, string> {
-    return {
-      [HTTP_HEADERS.AUTHORIZATION]: `Bearer ${token}`,
-      [HTTP_HEADERS.CONTENT_TYPE]: "application/json",
-      [HTTP_HEADERS.USER_AGENT]: "GitHubCopilotChat/0.26.7",
-      "Editor-Version": "vscode/1.99.3",
-      "Editor-Plugin-Version": "copilot-chat/0.26.7",
-    }
-  }
-
-  /**
-   * Get endpoint configurations for discovery
-   */
-  private getEndpointConfigs(): StreamingEndpointConfig[] {
-    return [
-      { path: ENDPOINT_PATHS.CHAT_COMPLETIONS, format: 0 },
-      { path: ENDPOINT_PATHS.CHAT_COMPLETIONS_NO_V1, format: 0 },
-      { path: ENDPOINT_PATHS.CHAT_COMPLETIONS, format: 1 },
-      { path: "/v1/engines/copilot-codex/completions", format: 2 },
-      { path: "/engines/copilot-codex/completions", format: 2 },
-      { path: "/completions", format: 2 },
-    ]
-  }
-
-  /**
-   * Helper method for safe stop parameter handling
-   */
-  private getSafeStopParam(stop?: string | string[]) {
-    if (stop === null || stop === undefined) {
-      return {}
-    }
-    if (typeof stop === 'string' && stop.length > 0) {
-      return { stop }
-    }
-    if (Array.isArray(stop) && stop.length > 0) {
-      return { stop }
-    }
-    return {}
-  }
-
-  /**
-   * Setup stream timeout
-   */
-  private setupStreamTimeout(stream: any, streamId: string): NodeJS.Timeout {
-    return setTimeout(() => {
-      logger.warn('STREAMING_SERVICE', `Stream ${streamId} timeout after ${this.config.timeoutMs}ms`)
-      // Handle timeout - could close stream or send error
-    }, this.config.timeoutMs)
-  }
-
-  /**
-   * Warmup connections for performance
-   */
-  private async warmupConnections(apiUrl: string): Promise<void> {
-    try {
-      const urlObj = new URL(apiUrl)
-      const origin = `${urlObj.protocol}//${urlObj.host}`
-      await connectionPool.warmupConnections(origin, 2)
-    } catch (error) {
-      // Warmup is best-effort, don't fail the main request
-      logger.debug('STREAMING_SERVICE', `Connection warmup failed: ${error}`)
-    }
-  }
-}
-
-/**
- * Stream processor for handling response streams
- */
-export class StreamProcessor {
-  /**
-   * Process streaming response
+   * CONSOLIDATED: Process streaming response with configurable optimization level
+   * 
+   * This method consolidates the logic from:
+   * - processStreamingResponseUnified
+   * - processStreamingResponseOptimized
+   * - processStreamingResponse (deprecated)
    */
   async processStream(
     response: Response,
     stream: any,
     request: ChatCompletionRequest,
     streamId: string,
-    useOptimizations: boolean = true
+    options: StreamingOptions = {}
   ): Promise<void> {
+    const opts = { ...DEFAULT_STREAMING_OPTIONS, ...options }
+    const startTime = Date.now()
+
     if (!response.body) {
       throw new Error("No response body available")
     }
 
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = Buffer.alloc(0)
-    let chunkCount = 0
-    let isAborted = false
+    // PERFORMANCE OPTIMIZATION: Use streaming manager for optimizations
+    let reader: ReadableStreamDefaultReader<Uint8Array>
+    
+    if (opts.useOptimizations) {
+      try {
+        // Try to use optimized streaming manager
+        const optimizedStream = await streamingManager.startStream(streamId, response.body)
+        reader = optimizedStream.getReader()
+        logger.debug('STREAMING', `Using optimized streaming manager for ${streamId}`)
+      } catch (error) {
+        logger.warn('STREAMING', `Failed to create optimized stream for ${streamId}, falling back to basic: ${error}`)
+        reader = response.body.getReader()
+        streamCoordinator.registerReader(streamId, reader)
+      }
+    } else {
+      reader = response.body.getReader()
+      streamCoordinator.registerReader(streamId, reader)
+    }
 
-    // Handle client abort
+    const decoder = new TextDecoder()
+    let buffer = Buffer.alloc(0) // Use Buffer for efficient memory management
+    let chunkCount = 0
+    let lastActivityTime = Date.now()
+    let actualModel: string | null = null
+    let modelLogged = false
+
+    // Handle client abort with guaranteed cleanup
+    let isAborted = false
+    let isTimedOut = false
+    
     stream.onAbort(() => {
-      logger.info('STREAM_PROCESSOR', `Client aborted stream ${streamId}`)
+      logger.info('STREAM', `Client aborted streaming request ${streamId}`)
       isAborted = true
+      // Release the local reader lock if present (safe and prevents leaks)
       try { reader.releaseLock() } catch {}
+      // Use coordinator for abort cleanup
+      streamCoordinator.initiateCleanup(streamId, 'client abort (consolidated)', 'streaming-service')
     })
+
+    // STABILITY FIX: Set up chunk timeout monitoring without throwing inside setInterval
+    // Use flag-based approach to avoid unhandled exceptions
+    const chunkTimeoutInterval = setInterval(() => {
+      if (Date.now() - lastActivityTime > opts.chunkTimeout) {
+        logger.warn('STREAM', `⏰ Chunk timeout for stream ${streamId}, last activity: ${Date.now() - lastActivityTime}ms ago`)
+        isTimedOut = true
+        clearInterval(chunkTimeoutInterval)
+        // Don't throw here - let the main loop handle the timeout gracefully
+      }
+    }, 5000) // Check every 5 seconds
 
     try {
       while (true) {
         if (isAborted) {
-          logger.debug('STREAM_PROCESSOR', `Stream ${streamId} was aborted, stopping processing`)
+          logger.debug('STREAM', `🚫 Stream ${streamId} was aborted, stopping processing`)
           break
+        }
+
+        if (isTimedOut) {
+          logger.error('STREAM', `⏰ Stream ${streamId} timed out - no data received for ${opts.chunkTimeout / 1000} seconds`)
+          throw new Error(`Streaming chunk timeout - no data received for ${opts.chunkTimeout / 1000} seconds`)
         }
 
         const { done, value } = await reader.read()
         if (done) {
-          logger.info('STREAM_PROCESSOR', `Stream ${streamId} completed with ${chunkCount} chunks`)
+          const duration = Date.now() - startTime
+
+          // Log completion with metrics
+          streamLogger.complete({
+            streamId,
+            chunkCount,
+            model: actualModel || undefined,
+            duration
+          })
+
+          // PERFORMANCE OPTIMIZATION: Sample streaming performance logs to reduce I/O overhead
+          // Log metrics for every 5th stream to avoid excessive logging under load
+          if (opts.useOptimizations && Math.random() < 0.2) {
+            const streamMetrics = streamingManager.getStreamMetrics(streamId)
+            if (streamMetrics) {
+              logger.info('STREAMING_PERFORMANCE',
+                `Stream ${streamId} metrics: ${streamMetrics.processingRate.toFixed(1)} chunks/sec, ` +
+                `${streamMetrics.backpressureEvents} backpressure events, ` +
+                `${(streamMetrics.bytesProcessed / 1024).toFixed(1)}KB processed`
+              )
+            }
+          }
           break
         }
 
-        // Process chunk data
+        // PERFORMANCE OPTIMIZATION: Efficient buffer management
         buffer = Buffer.concat([buffer, Buffer.from(value)])
+        lastActivityTime = Date.now()
+
+        // Process complete lines from buffer
         const { completeLines, remainingBuffer } = this.extractCompleteLines(buffer)
         buffer = remainingBuffer as Buffer<ArrayBuffer>
 
@@ -331,28 +185,92 @@ export class StreamProcessor {
             const data = line.slice(6).trim()
             if (data === '[DONE]') {
               await stream.writeSSE({ data: '[DONE]' })
-              logger.info('STREAM_PROCESSOR', `Stream ${streamId} finished with [DONE] signal`)
+
+              // STABILITY FIX: Use coordinator for [DONE] cleanup to prevent race conditions
+              logger.info('STREAM', `✅ Stream ${streamId} finished with [DONE] signal${actualModel ? ` (model: ${actualModel})` : ''}`)
+              await streamCoordinator.initiateCleanup(streamId, 'done signal', 'streaming-service')
               return
             }
 
-            // Process and write chunk
-            await this.processAndWriteChunk(data, stream, request, streamId)
-            chunkCount++
+            // Process chunk with error boundary
+            const chunkResult = StreamingErrorBoundary.handleChunkProcessing(
+              () => {
+                const chunk = JSON.parse(data)
+
+                // Capture the actual model from the first chunk
+                if (!modelLogged && chunk.model) {
+                  actualModel = chunk.model
+                  modelLogger.info(streamId, chunk.model, opts.apiUrl)
+                  modelLogged = true
+                }
+
+                const transformedChunk = this.responseTransformService.transformStreamChunk(chunk, request)
+                return {
+                  chunk,
+                  transformedChunk,
+                  chunkData: JSON.stringify(transformedChunk)
+                }
+              },
+              streamId,
+              chunkCount
+            )
+
+            if (chunkResult.success && chunkResult.data) {
+              try {
+                // CONSOLIDATED: Use appropriate backpressure handling based on optimization level
+                await this.writeWithBackpressure(
+                  stream,
+                  chunkResult.data.chunkData,
+                  streamId,
+                  opts.useOptimizations,
+                  opts.maxBufferSize
+                )
+
+                chunkCount++
+                this.streamMetrics.totalChunks++
+                this.streamMetrics.totalBytes += chunkResult.data.chunkData.length
+              } catch (writeError) {
+                logger.error('STREAM', `💥 Failed to write chunk ${chunkCount} for stream ${streamId}: ${writeError}`)
+                throw StreamingErrorBoundary.createStreamingError(
+                  'STREAM_FAILED',
+                  `Failed to write chunk: ${writeError instanceof Error ? writeError.message : 'Unknown error'}`,
+                  streamId,
+                  chunkCount
+                )
+              }
+            } else {
+              logger.warn('STREAM', `⚠️ Skipping malformed chunk ${chunkCount} for stream ${streamId}`)
+              continue
+            }
+
+            // PERFORMANCE OPTIMIZATION: Throttle progress logging and gate behind config flag
+            // Reduces I/O overhead under load by sampling logs and allowing disable in production
+            if (config.logging.enableProgressLogs) {
+              const logFrequency = opts.useOptimizations ? 10 : 5
+              if (chunkCount % logFrequency === 0) {
+                streamLogger.progress({
+                  streamId,
+                  chunkCount,
+                  model: actualModel || undefined,
+                  startTime
+                })
+              }
+            }
           }
         }
       }
     } catch (error) {
-      logger.error('STREAM_PROCESSOR', `Error processing stream ${streamId}: ${error}`)
+      logger.error('STREAM', `❌ Error processing stream ${streamId}: ${error}`)
       throw error
     } finally {
-      if (!isAborted) {
-        try { reader.releaseLock() } catch {}
-      }
+      clearInterval(chunkTimeoutInterval)
+      await streamCoordinator.initiateCleanup(streamId, 'finally (consolidated)', 'streaming-service')
     }
   }
 
   /**
-   * Extract complete lines from buffer
+   * PERFORMANCE OPTIMIZATION: Extract complete lines from buffer efficiently
+   * Processes buffer data to find complete lines ending with \n
    */
   private extractCompleteLines(buffer: Buffer): { completeLines: string[]; remainingBuffer: Buffer } {
     const decoder = new TextDecoder()
@@ -370,44 +288,154 @@ export class StreamProcessor {
   }
 
   /**
-   * Process and write individual chunk
+   * CONSOLIDATED: Write with adaptive backpressure handling
+   * 
+   * Merges logic from:
+   * - writeWithBackpressure (basic)
+   * - writeWithBackpressureOptimized (advanced with adaptive sizing)
    */
-  private async processAndWriteChunk(
-    data: string,
+  private async writeWithBackpressure(
     stream: any,
-    request: ChatCompletionRequest,
-    streamId: string
+    data: string,
+    streamId: string,
+    useOptimizations: boolean,
+    maxBufferSize: number
   ): Promise<void> {
-    try {
-      const chunk = FastJSON.parse(data)
-      if (!chunk) {
-        logger.warn('STREAM_PROCESSOR', `Skipping invalid JSON chunk in stream ${streamId}`)
-        return
+    let effectiveBufferSize = maxBufferSize
+
+    // OPTIMIZATION: Adaptive buffer sizing based on stream performance
+    if (useOptimizations) {
+      const streamMetrics = streamingManager.getStreamMetrics(streamId)
+      
+      if (streamMetrics) {
+        // Reduce buffer size if backpressure events are frequent
+        if (streamMetrics.backpressureEvents > 5) {
+          effectiveBufferSize = Math.floor(maxBufferSize * 0.7)
+        }
+
+        // Increase buffer size for high-performing streams
+        if (streamMetrics.processingRate > 10 && streamMetrics.backpressureEvents === 0) {
+          effectiveBufferSize = Math.floor(maxBufferSize * 1.3)
+        }
+      }
+    }
+
+    // Check if data size exceeds buffer limit
+    if (data.length > effectiveBufferSize) {
+      if (useOptimizations) {
+        logger.debug('STREAMING',
+          `Large chunk detected in ${streamId}: ${data.length} bytes (limit: ${effectiveBufferSize})`
+        )
+      } else {
+        logger.warn('STREAMING', `⚠️ Large chunk detected in ${streamId}: ${data.length} bytes`)
       }
 
-      // Transform chunk if needed (implement transformation logic)
-      const transformedChunk = this.transformChunk(chunk, request)
-      const chunkData = FastJSON.safeStringify(transformedChunk, '{}')
+      // CONSOLIDATED: Use appropriate chunk splitting strategy
+      const chunks = useOptimizations
+        ? this.splitLargeChunkOptimized(data, effectiveBufferSize)
+        : this.splitLargeChunk(data, maxBufferSize)
 
-      await stream.writeSSE({ data: chunkData })
-    } catch (error) {
-      logger.warn('STREAM_PROCESSOR', `Skipping malformed chunk in stream ${streamId}: ${error}`)
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i]
+        await stream.writeSSE({ data: chunk })
+
+        // PERFORMANCE OPTIMIZATION: Adaptive delay based on backpressure
+        if (useOptimizations) {
+          const streamMetrics = streamingManager.getStreamMetrics(streamId)
+          
+          // Only delay when there's actual backpressure
+          if (streamMetrics && streamMetrics.backpressureEvents > 0) {
+            // Longer delay if backpressure is active
+            const delay = Math.min(10, streamMetrics.backpressureEvents)
+            await new Promise(resolve => setTimeout(resolve, delay))
+          } else if (chunks.length > 50 && i < chunks.length - 1) {
+            // Very minimal delay only for extremely large chunk sequences
+            await new Promise(resolve => setTimeout(resolve, 0.1))
+          }
+        } else {
+          // Basic mode: minimal delay for very large sequences
+          if (chunks.length > 20 && i < chunks.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 0.5))
+          }
+        }
+      }
+    } else {
+      await stream.writeSSE({ data })
     }
   }
 
   /**
-   * Transform chunk for compatibility
+   * CONSOLIDATED: Split large chunks into smaller pieces (basic strategy)
    */
-  private transformChunk(chunk: any, request: ChatCompletionRequest): any {
-    // Implement chunk transformation logic here
-    // This would be similar to transformCopilotStreamChunk in the original code
-    return {
-      id: chunk.id || `chatcmpl-${Date.now()}`,
-      object: "chat.completion.chunk",
-      created: chunk.created || Math.floor(Date.now() / 1000),
-      model: request.model,
-      choices: chunk.choices || [],
-      usage: chunk.usage
+  private splitLargeChunk(data: string, maxBufferSize: number): string[] {
+    const chunks: string[] = []
+    const maxChunkSize = Math.floor(maxBufferSize / 2) // Use half of max buffer
+
+    for (let i = 0; i < data.length; i += maxChunkSize) {
+      chunks.push(data.slice(i, i + maxChunkSize))
     }
+
+    return chunks
+  }
+
+  /**
+   * CONSOLIDATED: Optimized chunk splitting with adaptive sizing and JSON boundary awareness
+   */
+  private splitLargeChunkOptimized(data: string, bufferSize: number): string[] {
+    const chunks: string[] = []
+    const maxChunkSize = Math.floor(bufferSize / 2) // Use half of adaptive buffer
+
+    // Try to split at JSON boundaries for better parsing
+    if (data.includes('}{')) {
+      // Split at JSON object boundaries
+      const jsonObjects = data.split('}{')
+      let currentChunk = ''
+
+      for (let i = 0; i < jsonObjects.length; i++) {
+        let obj = jsonObjects[i]
+
+        // Add missing braces
+        if (i > 0) obj = '{' + obj
+        if (i < jsonObjects.length - 1) obj = obj + '}'
+
+        if (currentChunk.length + obj.length > maxChunkSize && currentChunk.length > 0) {
+          chunks.push(currentChunk)
+          currentChunk = obj
+        } else {
+          currentChunk += obj
+        }
+      }
+
+      if (currentChunk.length > 0) {
+        chunks.push(currentChunk)
+      }
+    } else {
+      // Fallback to simple splitting
+      for (let i = 0; i < data.length; i += maxChunkSize) {
+        chunks.push(data.slice(i, i + maxChunkSize))
+      }
+    }
+
+    return chunks
+  }
+
+  /**
+   * Get accumulated streaming metrics
+   */
+  getMetrics(): { totalChunks: number; totalBytes: number } {
+    return { ...this.streamMetrics }
+  }
+
+  /**
+   * Reset streaming metrics
+   */
+  resetMetrics(): void {
+    this.streamMetrics.totalChunks = 0
+    this.streamMetrics.totalBytes = 0
   }
 }
+
+/**
+ * Singleton instance for convenience
+ */
+export const streamingService = new StreamingService()

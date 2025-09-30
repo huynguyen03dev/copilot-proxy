@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import { createHealthRoutes, ServerInfo } from "./health.routes.js"
 import { createAuthRoutes } from "./auth.routes.js"
-import { createChatRoutes, ChatHandlers } from "./chat.routes.js"
+import { createChatRoutes, ChatRouteDependencies } from "./chat.routes.js"
 import { createModelsRoutes } from "./models.routes.js"
 
 /**
@@ -11,7 +11,7 @@ import { createModelsRoutes } from "./models.routes.js"
 
 export interface RouteServices {
   serverInfo: ServerInfo
-  chatHandlers: ChatHandlers
+  chatDeps: ChatRouteDependencies
 }
 
 /**
@@ -29,7 +29,7 @@ export function setupRoutes(app: Hono, services: RouteServices): void {
   app.route("/auth", authRoutes)
 
   // Chat completions routes (/v1/chat/completions)
-  const chatRoutes = createChatRoutes(services.chatHandlers)
+  const chatRoutes = createChatRoutes(services.chatDeps)
   app.route("/v1", chatRoutes)
 
   // Models routes (/v1/models)
