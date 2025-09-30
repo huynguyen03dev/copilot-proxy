@@ -815,6 +815,12 @@ export class CopilotAPIServer {
             owned_by: "github-copilot"
           },
           {
+            id: "gpt-5",
+            object: "model",
+            created: Date.now(),
+            owned_by: "github-copilot"
+          },
+          {
             id: "o4-mini",
             object: "model",
             created: Date.now(),
@@ -831,7 +837,13 @@ export class CopilotAPIServer {
             object: "model",
             created: Date.now(),
             owned_by: "github-copilot"
-          }
+          },
+          {
+            id: "grok-code-fast-1",
+            object: "model",
+            created: Date.now(),
+            owned_by: "github-copilot"
+          },
         ]
       })
     })
