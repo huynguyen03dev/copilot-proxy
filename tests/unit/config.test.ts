@@ -3,7 +3,8 @@
  * Tests configuration validation, environment variable parsing, and presets
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test"
+import { describe, it, beforeEach, afterEach } from "node:test"
+import { expect } from "../helpers/assertions.js"
 
 // Mock environment variables
 const originalEnv = process.env

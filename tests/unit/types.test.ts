@@ -3,7 +3,8 @@
  * Tests error types, HTTP types, and utility functions
  */
 
-import { describe, it, expect } from "bun:test"
+import { describe, it } from "node:test"
+import { expect } from "../helpers/assertions.js"
 import {
   ErrorFactory,
   isAPIError,
@@ -29,7 +30,7 @@ import {
   type NetworkError,
   type ConfigurationError,
   type ServerError
-} from "../../src/types"
+} from "../../src/types.js"
 
 describe("Type Utilities", () => {
   describe("ErrorFactory", () => {

@@ -3,9 +3,10 @@
  * Tests response transformation from Copilot API to OpenAI format
  */
 
-import { describe, it, expect, beforeEach } from 'bun:test'
-import { ResponseTransformService } from '../../../src/services/responseTransformService'
-import { ChatCompletionRequest } from '../../../src/types'
+import { describe, it, beforeEach } from 'node:test'
+import { expect } from '../../helpers/assertions.js'
+import { ResponseTransformService } from '../../../src/services/responseTransformService.js'
+import { ChatCompletionRequest } from '../../../src/types.js'
 
 describe('ResponseTransformService', () => {
   let service: ResponseTransformService

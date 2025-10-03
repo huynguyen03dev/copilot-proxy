@@ -3,8 +3,9 @@
  * Tests the role normalization functionality for client compatibility
  */
 
-import { describe, it, expect } from "bun:test"
-import { ChatMessage, DeltaMessage } from "../../src/types"
+import { describe, it } from "node:test"
+import { expect } from "../helpers/assertions.js"
+import { ChatMessage, DeltaMessage } from "../../src/types.js"
 
 describe("Role Normalization", () => {
   describe("ChatMessage Role Normalization", () => {

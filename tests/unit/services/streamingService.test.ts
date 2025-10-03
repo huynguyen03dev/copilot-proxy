@@ -3,9 +3,10 @@
  * Tests streaming processing with various configurations
  */
 
-import { describe, it, expect, beforeEach } from 'bun:test'
-import { StreamingService } from '../../../src/services/streamingService'
-import { ChatCompletionRequest } from '../../../src/types'
+import { describe, it, beforeEach } from 'node:test'
+import { expect, expectAsyncNotToThrow } from '../../helpers/assertions.js'
+import { StreamingService } from '../../../src/services/streamingService.js'
+import { ChatCompletionRequest } from '../../../src/types.js'
 
 describe('StreamingService', () => {
   let service: StreamingService
@@ -54,9 +55,9 @@ describe('StreamingService', () => {
       }
 
       // Should not throw
-      await expect(async () => {
+      await expectAsyncNotToThrow(async () => {
         await service.processStream(mockResponse, mockStream, mockRequest, 'test-stream', options)
-      }).not.toThrow()
+      })
     })
 
     it('should handle empty stream', async () => {
@@ -77,13 +78,13 @@ describe('StreamingService', () => {
         writeSSE: () => {}
       }
 
-      await expect(async () => {
+      await expectAsyncNotToThrow(async () => {
         await service.processStream(mockResponse, mockStream, mockRequest, 'empty-stream', {
           useOptimizations: false,
           apiUrl: 'https://api.test.com',
           maxBufferSize: 16 * 1024 * 1024
         })
-      }).not.toThrow()
+      })
     })
 
     it('should handle different maxBufferSize values', async () => {

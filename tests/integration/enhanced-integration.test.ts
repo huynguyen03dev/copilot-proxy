@@ -3,24 +3,25 @@
  * Comprehensive end-to-end testing with error scenarios and edge cases
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "bun:test"
-import { CopilotAPIServer } from "../../src/server"
-import { testUtils } from "../setup"
+import { describe, it, before, after, beforeEach } from "node:test"
+import { expect } from "../helpers/assertions.js"
+import { CopilotAPIServer } from "../../src/server.js"
+import { testUtils } from "../setup.js"
 
 describe("Enhanced Integration Tests", () => {
   let server: CopilotAPIServer
   const testPort = 8074
   const baseUrl = `http://localhost:${testPort}`
 
-  beforeAll(async () => {
+  before(async () => {
     server = new CopilotAPIServer(testPort, "127.0.0.1")
     server.start()
-    
+
     // Wait for server to start
     await testUtils.wait(1000)
   })
 
-  afterAll(async () => {
+  after(async () => {
     // Cleanup server if stop method exists
     if (server && typeof (server as any).stop === 'function') {
       (server as any).stop()

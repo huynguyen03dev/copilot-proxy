@@ -3,15 +3,16 @@
  * Tests content validation, transformation, and statistics functions
  */
 
-import { describe, it, expect, beforeEach } from "bun:test"
+import { describe, it, beforeEach } from "node:test"
+import { expect } from "../helpers/assertions.js"
 import {
   extractTextContent,
   validateContent,
   transformMessageForCopilot,
   transformMessagesForCopilot,
   getContentStats
-} from "../../src/utils/content"
-import type { ContentBlock, TextContent, ImageContent } from "../../src/types"
+} from "../../src/utils/content.js"
+import type { ContentBlock, TextContent, ImageContent } from "../../src/types.js"
 
 describe("Content Processing Utilities", () => {
   describe("extractTextContent", () => {

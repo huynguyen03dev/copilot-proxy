@@ -3,9 +3,10 @@
  * Tests ping detection heuristics and handling modes
  */
 
-import { describe, it, expect, beforeEach } from 'bun:test'
-import { PingDetectionService } from '../../../src/services/pingDetectionService'
-import { ChatCompletionRequest } from '../../../src/types'
+import { describe, it, beforeEach } from 'node:test'
+import { expect } from '../../helpers/assertions.js'
+import { PingDetectionService } from '../../../src/services/pingDetectionService.js'
+import { ChatCompletionRequest } from '../../../src/types.js'
 
 describe('PingDetectionService', () => {
   let service: PingDetectionService

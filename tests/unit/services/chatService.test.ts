@@ -3,11 +3,12 @@
  * Tests core chat completion business logic
  */
 
-import { describe, it, expect, beforeEach } from 'bun:test'
-import { ChatService } from '../../../src/services/chat/chatService'
-import { EndpointDiscoveryService } from '../../../src/services/endpointDiscoveryService'
-import { ResponseTransformService } from '../../../src/services/responseTransformService'
-import { StreamMonitorService } from '../../../src/services/streamMonitorService'
+import { describe, it, beforeEach } from 'node:test'
+import { expect } from '../../helpers/assertions.js'
+import { ChatService } from '../../../src/services/chat/chatService.js'
+import { EndpointDiscoveryService } from '../../../src/services/endpointDiscoveryService.js'
+import { ResponseTransformService } from '../../../src/services/responseTransformService.js'
+import { StreamMonitorService } from '../../../src/services/streamMonitorService.js'
 
 describe('ChatService', () => {
   let chatService: ChatService
