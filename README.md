@@ -17,7 +17,7 @@ A command-line tool that exposes GitHub Copilot as an OpenAI-compatible API endp
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 18+
+- Node.js 20+
 - Active GitHub Copilot subscription
 - Basic understanding of APIs and authentication
 
@@ -154,17 +154,6 @@ copilot-proxy --help        # Show all available options
 - `GET /` - Health check and server info
 - `GET /metrics` - Performance metrics and monitoring data
 
-## 📦 Publishing to npm
-
-To publish this package to npm:
-
-```bash
-# Build the project
-npm run build
-
-# Publish to npm (requires npm account)
-npm publish
-```
 
 ## 🛠️ Development
 
@@ -178,11 +167,11 @@ cd copilot-proxy
 # Install dependencies
 npm install
 
-# Development with auto-reload
-npm run dev
-
 # Build the project
 npm run build
+
+# Run with auto-authentication
+node dist/cli.js --auto-auth
 
 # Type checking
 npm run type-check
