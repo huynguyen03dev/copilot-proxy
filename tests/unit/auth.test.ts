@@ -3,8 +3,9 @@
  * Tests authentication utilities and token management
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test"
-import { GitHubCopilotAuth } from "../../src/auth"
+import { describe, it, beforeEach, afterEach } from "node:test"
+import { expect } from "../helpers/assertions.js"
+import { GitHubCopilotAuth } from "../../src/auth.js"
 import fs from "fs/promises"
 import path from "path"
 import os from "os"

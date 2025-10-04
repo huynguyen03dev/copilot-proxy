@@ -3,8 +3,9 @@
  * Tests for request size limits and JSON depth validation
  */
 
-import { describe, it, expect } from "bun:test"
-import { PRODUCTION_LIMITS, TEST_LIMITS } from "../../src/middleware/requestSize"
+import { describe, it } from "node:test"
+import { expect } from "../helpers/assertions.js"
+import { PRODUCTION_LIMITS, TEST_LIMITS } from "../../src/middleware/requestSize.js"
 
 describe("Request Size Limits", () => {
   describe("Production Limits", () => {

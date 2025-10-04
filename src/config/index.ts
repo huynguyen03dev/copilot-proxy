@@ -106,7 +106,7 @@ function parseEnvironmentConfig(): Config {
   const rawConfig = {
     server: {
       port: parseInteger(env.PORT, 8069),
-      hostname: env.HOSTNAME || "127.0.0.1",
+      hostname: "127.0.0.1", // Always default to localhost; override via CLI --host only
       maxConcurrentStreams: parseInteger(env.MAX_STREAMS, 100),
       requestTimeout: parseInteger(env.REQUEST_TIMEOUT, 300000),
       keepAliveTimeout: parseInteger(env.KEEP_ALIVE_TIMEOUT, 65000),
@@ -171,8 +171,7 @@ function createConfig(): Config {
     
     // Apply environment-specific overrides
     if (validatedConfig.environment === 'production') {
-      // Production optimizations
-      validatedConfig.server.hostname = validatedConfig.server.hostname === '127.0.0.1' ? '0.0.0.0' : validatedConfig.server.hostname
+      // Production optimizations (hostname remains 127.0.0.1 unless explicitly overridden via CLI)
       validatedConfig.server.maxConcurrentStreams = Math.max(validatedConfig.server.maxConcurrentStreams, 200)
 
       validatedConfig.logging.level = validatedConfig.logging.level === 'debug' ? 'info' : validatedConfig.logging.level
@@ -267,7 +266,7 @@ export function getEnvironmentConfig(env: 'development' | 'production' | 'test')
         ...baseConfig,
         server: {
           ...baseConfig.server,
-          hostname: '0.0.0.0',
+          // hostname remains 127.0.0.1 (no auto-switch to 0.0.0.0)
           maxConcurrentStreams: 200,
         },
         logging: {

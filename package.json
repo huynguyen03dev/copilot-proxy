@@ -23,7 +23,10 @@
     "start": "node dist/cli.js",
     "dev": "tsx src/cli.ts",
     "dev:watch": "tsx watch src/cli.ts",
-    "test": "node --test || echo \"No tests configured\""
+    "test": "node --test --experimental-test-coverage tests/**/*.test.ts",
+    "test:unit": "node --test tests/unit/**/*.test.ts",
+    "test:integration": "node --test tests/integration/**/*.test.ts",
+    "test:watch": "node --test --watch tests/**/*.test.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.4",
@@ -47,7 +50,7 @@
   "author": "",
   "license": "MIT",
   "engines": {
-    "node": ">=18"
+    "node": ">=20.0.0"
   },
   "files": [
     "dist"

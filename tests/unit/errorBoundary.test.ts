@@ -3,7 +3,8 @@
  * Tests error handling, retry logic, timeouts, and fallback mechanisms
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test"
+import { describe, it, beforeEach, afterEach } from "node:test"
+import { expect } from "../helpers/assertions.js"
 import {
   ErrorBoundary,
   StreamingErrorBoundary,
@@ -11,8 +12,8 @@ import {
   AuthErrorBoundary,
   type ErrorBoundaryConfig,
   type ErrorBoundaryResult
-} from "../../src/utils/errorBoundary"
-import { ErrorFactory } from "../../src/types/errors"
+} from "../../src/utils/errorBoundary.js"
+import { ErrorFactory } from "../../src/types/errors.js"
 
 // Mock logger to avoid console output during tests
 const mockLogger = {

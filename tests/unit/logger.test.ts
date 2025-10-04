@@ -3,8 +3,9 @@
  * Tests logging functionality, correlation IDs, and structured logging
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test"
-import { Logger, LogLevel, type LoggerConfig } from "../../src/utils/logger"
+import { describe, it, beforeEach, afterEach } from "node:test"
+import { expect } from "../helpers/assertions.js"
+import { Logger, LogLevel, type LoggerConfig } from "../../src/utils/logger.js"
 
 // Mock console methods to capture output
 let consoleLogs: string[] = []

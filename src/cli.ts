@@ -15,7 +15,7 @@ const autoAuthArg = args.includes("--auto-auth")
 
 // Parse port and hostname for use in help text and server startup
 const port = portArg ? parseInt(portArg.split("=")[1]) : config.server.port
-const hostname = hostArg ? hostArg.split("=")[1] : config.server.hostname
+const hostname = hostArg ? hostArg.split("=")[1] : "127.0.0.1" // Always default to localhost unless --host is provided
 
 function printHelp() {
   console.log(`
@@ -28,6 +28,7 @@ Usage: copilot-proxy [options]
 Options:
   --port=<number>     Port to listen on (current: ${port}, default: 8069)
   --host=<string>     Hostname to bind to (current: ${hostname}, default: 127.0.0.1)
+                      Use --host=0.0.0.0 to allow network access
   --auth              Start interactive authentication flow
   --auto-auth         Automatically authenticate and start server (seamless)
   --clear-auth        Clear stored authentication
@@ -35,13 +36,13 @@ Options:
 
 Environment Variables:
   PORT                Server port (current: ${port})
-  HOSTNAME            Server hostname (current: ${hostname})
 
 Examples:
   copilot-proxy --auth                  # First: Authenticate with GitHub Copilot
-  copilot-proxy                         # Then: Start server (requires authentication)
+  copilot-proxy                         # Then: Start server on localhost (127.0.0.1:8069)
   copilot-proxy --auto-auth             # One command: Authenticate + start server
   copilot-proxy --port=8080             # Override port via command line
+  copilot-proxy --host=0.0.0.0          # Allow network access (bind to all interfaces)
   PORT=3000 copilot-proxy               # Override port via environment
   copilot-proxy --clear-auth            # Clear authentication
 

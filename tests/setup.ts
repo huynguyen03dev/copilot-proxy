@@ -1,22 +1,22 @@
 /**
  * Test Setup and Configuration
- * Global test setup, mocks, and utilities
+ * Global test setup, mocks, and utilities for Node.js test runner
  */
 
-import { beforeAll, afterAll, beforeEach } from "bun:test"
-import { tokenCache } from "../src/utils/tokenCache"
+import { before, after, beforeEach } from "node:test"
+import { tokenCache } from "../src/utils/tokenCache.js"
 
 // Global test configuration
-beforeAll(() => {
+before(() => {
   // Set test environment
   process.env.NODE_ENV = "test"
   process.env.LOG_LEVEL = "silent"
-  
+
   // Disable metrics and monitoring in tests
   process.env.METRICS_ENABLED = "false"
   process.env.ENABLE_MEMORY_LOGS = "false"
   process.env.ENABLE_PROGRESS_LOGS = "false"
-  
+
   // Use test-specific configuration
   process.env.PORT = "0" // Random port
   process.env.CORS_ORIGINS = "http://localhost:3000"
@@ -29,7 +29,7 @@ beforeEach(() => {
   tokenCache.clearCache()
 })
 
-afterAll(() => {
+after(() => {
   // Cleanup after all tests
   // Reset environment variables if needed
 })
