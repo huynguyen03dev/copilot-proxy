@@ -117,17 +117,28 @@ Configure via environment variables or command line arguments:
 
 ### Command Line Arguments
 ```bash
-copilot-proxy --port=8069 --host=127.0.0.1
+# Default: binds to localhost only (127.0.0.1)
+copilot-proxy
+
+# Override port
+copilot-proxy --port=8080
+
+# Allow network access (bind to all interfaces)
+copilot-proxy --host=0.0.0.0
+
+# Combine options
+copilot-proxy --port=8080 --host=0.0.0.0
 ```
+
+**Note:** The server always defaults to `127.0.0.1` (localhost only) for security. To allow access from other machines on your network, explicitly use `--host=0.0.0.0`.
 
 ### Environment Variables
 ```bash
-PORT=8069                    # Server port
-HOSTNAME=127.0.0.1          # Bind address (localhost for security)
-LOG_LEVEL=info              # debug, info, warn, error
-ENABLE_COMPRESSION=true     # Response compression (recommended)
-CACHE_HEADERS=true          # Client-side caching (recommended)
-ENABLE_CONNECTION_POOLING=true  # HTTP connection pooling (recommended)
+PORT=8069                          # Server port
+LOG_LEVEL=info                     # debug, info, warn, error
+ENABLE_COMPRESSION=true            # Response compression (recommended)
+CACHE_HEADERS=true                 # Client-side caching (recommended)
+ENABLE_CONNECTION_POOLING=true     # HTTP connection pooling (recommended)
 ```
 
 ### Help

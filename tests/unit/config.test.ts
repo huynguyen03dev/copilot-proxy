@@ -72,14 +72,13 @@ describe("Configuration System", () => {
   describe("Configuration Validation", () => {
     it("should validate server configuration", async () => {
       process.env.PORT = "8080"
-      process.env.HOSTNAME = "localhost"
       process.env.MAX_CONCURRENT_STREAMS = "50"
 
       delete require.cache[require.resolve("../../src/config/index.ts")]
       const { config } = await import("../../src/config/index.ts")
 
       expect(config.server.port).toBe(8080)
-      expect(config.server.hostname).toBe("localhost")
+      expect(config.server.hostname).toBe("127.0.0.1") // Always defaults to localhost
       expect(config.server.maxConcurrentStreams).toBe(100) // Default value from config
     })
 
@@ -131,8 +130,23 @@ describe("Configuration System", () => {
       const { config } = await import("../../src/config/index.ts")
 
       expect(config.server.port).toBe(8069) // Default port
+      expect(config.server.hostname).toBe("127.0.0.1") // Always defaults to localhost
       expect(config.logging.level).toBe("info") // Default log level
       expect(config.streaming.maxBufferSize).toBe(1048576) // Default buffer size (1MB)
+    })
+
+    it("should ignore HOSTNAME environment variable", async () => {
+      // Setting HOSTNAME env var should have no effect
+      process.env.HOSTNAME = "0.0.0.0"
+      process.env.PORT = "8080"
+
+      delete require.cache[require.resolve("../../src/config/index.ts")]
+      const { config } = await import("../../src/config/index.ts")
+
+      expect(config.server.hostname).toBe("127.0.0.1") // Should ignore HOSTNAME env var
+      expect(config.server.port).toBe(8080) // PORT env var still works
+
+      delete process.env.HOSTNAME
     })
 
     it("should handle invalid port values", async () => {
@@ -178,6 +192,16 @@ describe("Configuration System", () => {
       expect(config.environment).toBe("development")
       expect(config.logging.level).toBe("debug") // Development should use debug level
       expect(config.security.enableRateLimit).toBe(false) // Development should disable rate limiting
+    })
+
+    it("should NOT change hostname in production environment", async () => {
+      process.env.NODE_ENV = "production"
+
+      delete require.cache[require.resolve("../../src/config/index.ts")]
+      const { config } = await import("../../src/config/index.ts")
+
+      expect(config.environment).toBe("production")
+      expect(config.server.hostname).toBe("127.0.0.1") // Should remain localhost even in production
     })
 
     it("should handle test environment variables", () => {
