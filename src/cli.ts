@@ -11,7 +11,6 @@ const hostArg = args.find(arg => arg.startsWith("--host="))
 const helpArg = args.includes("--help") || args.includes("-h")
 const authArg = args.includes("--auth")
 const clearAuthArg = args.includes("--clear-auth")
-const autoAuthArg = args.includes("--auto-auth")
 
 // Parse port and hostname for use in help text and server startup
 const port = portArg ? parseInt(portArg.split("=")[1]) : config.server.port
@@ -23,14 +22,13 @@ Copilot Proxy (Node)
 
 Usage: copilot-proxy [options]
 
-⚠️  AUTHENTICATION REQUIRED: Server requires GitHub Copilot authentication to start.
+⚠️  AUTHENTICATION: Server automatically authenticates with GitHub Copilot on startup.
 
 Options:
   --port=<number>     Port to listen on (current: ${port}, default: 8069)
   --host=<string>     Hostname to bind to (current: ${hostname}, default: 127.0.0.1)
                       Use --host=0.0.0.0 to allow network access
-  --auth              Start interactive authentication flow
-  --auto-auth         Automatically authenticate and start server (seamless)
+  --auth              Start interactive authentication flow only (no server)
   --clear-auth        Clear stored authentication
   --help, -h          Show this help message
 
@@ -38,12 +36,11 @@ Environment Variables:
   PORT                Server port (current: ${port})
 
 Examples:
-  copilot-proxy --auth                  # First: Authenticate with GitHub Copilot
-  copilot-proxy                         # Then: Start server on localhost (127.0.0.1:8069)
-  copilot-proxy --auto-auth             # One command: Authenticate + start server
+  copilot-proxy                         # Start server with automatic authentication (default)
   copilot-proxy --port=8080             # Override port via command line
   copilot-proxy --host=0.0.0.0          # Allow network access (bind to all interfaces)
   PORT=3000 copilot-proxy               # Override port via environment
+  copilot-proxy --auth                  # Manual authentication only (no server start)
   copilot-proxy --clear-auth            # Clear authentication
 
 API Endpoints:
@@ -56,15 +53,17 @@ API Endpoints:
   GET  /v1/models                         # List available models
 
 Authentication Flow:
+  By default, the server automatically authenticates on startup.
+
+  Manual authentication (optional):
   1. Run: copilot-proxy --auth
   2. Visit the provided GitHub URL (opens automatically if possible)
   3. Enter the user code shown in the terminal
   4. Wait for confirmation (up to 15 minutes)
-  5. Start the server: copilot-proxy
-  6. Use the API with any OpenAI-compatible client
+  5. Authentication is saved for future use
 
 Troubleshooting Authentication:
-  • If authentication fails: copilot-proxy --clear-auth && copilot-proxy --auth
+  • If authentication fails: copilot-proxy --clear-auth
   • Check GitHub Copilot subscription is active
   • Ensure stable internet connection
   • Authentication expires after 15 minutes - retry if needed
@@ -129,60 +128,9 @@ async function handleClearAuth() {
   process.exit(0)
 }
 
-async function checkAuthenticationRequired() {
+async function startServerWithAuth() {
   try {
-    const isAuthenticated = await GitHubCopilotAuth.isAuthenticated()
-
-    if (!isAuthenticated) {
-      console.log("🔐 Authentication Required")
-      console.log("\nCopilot Proxy requires GitHub Copilot authentication to function.")
-      console.log("The server cannot start without valid authentication.\n")
-
-      console.log("💡 Authentication Options:")
-      console.log("   • copilot-proxy --auth        Interactive authentication flow")
-      console.log("   • copilot-proxy --auto-auth    Seamless authentication + start server")
-      console.log("\n📖 Authentication Flow:")
-      console.log("   1. Run: copilot-proxy --auth")
-      console.log("   2. Visit the GitHub URL and enter the code")
-      console.log("   3. Once authenticated, run: copilot-proxy")
-      console.log("\n🔄 Alternative (one command):")
-      console.log("   • copilot-proxy --auto-auth    (handles auth + server startup)")
-
-      process.exit(1)
-    }
-
-    console.log("✅ Authenticated with GitHub Copilot")
-    return true
-  } catch (error) {
-    console.log("❌ Authentication check failed:", error)
-    console.log("\n💡 Try clearing and re-authenticating:")
-    console.log("   copilot-proxy --clear-auth")
-    console.log("   copilot-proxy --auth")
-    process.exit(1)
-  }
-}
-
-async function startServer() {
-  // Ensure authentication before starting server
-  await checkAuthenticationRequired()
-
-  const server = new CopilotAPIServer(port, hostname)
-  await server.start()
-
-  process.on("SIGINT", () => {
-    console.log("\n👋 Shutting down server...")
-    process.exit(0)
-  })
-
-  process.on("SIGTERM", () => {
-    console.log("\n👋 Shutting down server...")
-    process.exit(0)
-  })
-}
-
-async function handleAutoAuth() {
-  try {
-    console.log("🚀 Starting seamless authentication and server startup...")
+    console.log("🚀 Starting Copilot Proxy with automatic authentication...")
 
     const isAuthenticated = await GitHubCopilotAuth.isAuthenticated()
     if (isAuthenticated) {
@@ -202,9 +150,20 @@ async function handleAutoAuth() {
     }
 
     console.log("🚀 Starting server...")
-    await startServer()
+    const server = new CopilotAPIServer(port, hostname)
+    await server.start()
+
+    process.on("SIGINT", () => {
+      console.log("\n👋 Shutting down server...")
+      process.exit(0)
+    })
+
+    process.on("SIGTERM", () => {
+      console.log("\n👋 Shutting down server...")
+      process.exit(0)
+    })
   } catch (error) {
-    console.error("❌ Failed to start with auto-authentication:", error)
+    console.error("❌ Failed to start server:", error)
     console.log("\n💡 Try manual authentication: copilot-proxy --auth")
     process.exit(1)
   }
@@ -225,10 +184,9 @@ async function main() {
     await handleClearAuth()
   } else if (authArg) {
     await handleAuth()
-  } else if (autoAuthArg) {
-    await handleAutoAuth()
   } else {
-    await startServer()
+    // Default behavior: start server with automatic authentication
+    await startServerWithAuth()
   }
 }
 

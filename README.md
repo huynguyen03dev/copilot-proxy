@@ -32,18 +32,17 @@ npm install @hazeruno/copilot-proxy
 
 ### Usage
 ```bash
-# Authenticate and start in one command
-copilot-proxy --auto-auth
-
-# Or step by step
-copilot-proxy --auth        # Authenticate with GitHub
-copilot-proxy               # Start the server
+# Start server (automatically authenticates if needed)
+copilot-proxy
 
 # Custom port/host
 copilot-proxy --port=3000 --host=localhost
+
+# Manual authentication only (optional)
+copilot-proxy --auth
 ```
 
-Server runs on `http://127.0.0.1:8069` by default.
+Server runs on `http://127.0.0.1:8069` by default and automatically handles authentication on startup.
 
 ## 📚 Learning Objectives
 
@@ -170,8 +169,8 @@ npm install
 # Build the project
 npm run build
 
-# Run with auto-authentication
-node dist/cli.js --auto-auth
+# Run the server (automatically authenticates)
+node dist/cli.js
 
 # Type checking
 npm run type-check
