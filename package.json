@@ -31,8 +31,11 @@
   "dependencies": {
     "@hono/node-server": "^1.19.4",
     "@hono/zod-validator": "^0.2.2",
+    "fast-json-stringify": "^6.1.1",
     "hono": "^4.6.3",
+    "lru-cache": "^11.2.2",
     "undici": "^6.19.8",
+    "xxhash-wasm": "^1.1.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

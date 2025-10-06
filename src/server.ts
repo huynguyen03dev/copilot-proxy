@@ -58,6 +58,7 @@ import {
   PRODUCTION_CACHE_CONFIG,
   TEST_CACHE_CONFIG
 } from "./middleware/cacheHeaders.js"
+import { zodValidationMiddleware } from "./middleware/zodValidation.js"
 import {
   initializeBatchLogger,
   PRODUCTION_BATCH_CONFIG,
@@ -227,6 +228,17 @@ export class CopilotAPIServer {
 
 
   private setupMiddleware() {
+    // PERFORMANCE: Helper to skip expensive middleware for health check routes
+    const skipForHealthChecks = (middleware: any) => {
+      return async (c: any, next: any) => {
+        // Skip expensive middleware for health check endpoints
+        if (c.req.path === '/' || c.req.path === '/health' || c.req.path === '/metrics') {
+          return next()
+        }
+        return middleware(c, next)
+      }
+    }
+
     // Enable request correlation tracking (must be first)
     this.app.use("*", correlationMiddleware)
 
@@ -241,12 +253,13 @@ export class CopilotAPIServer {
     // Request logging (after correlation middleware)
     this.app.use("*", honoLogger())
 
+    // PERFORMANCE: Skip compression for health checks
     // Response compression middleware (early in pipeline for optimal performance)
     if (config.performance.enableCompression) {
-      this.app.use("*", compressionMiddleware(
+      this.app.use("*", skipForHealthChecks(compressionMiddleware(
         this.IS_TEST_ENVIRONMENT ? DEFAULT_COMPRESSION_CONFIG : PRODUCTION_COMPRESSION_CONFIG
-      ))
-      logger.info('SERVER', '🗜️  Response compression enabled')
+      )))
+      logger.info('SERVER', '🗜️  Response compression enabled (skipped for health checks)')
     }
 
     // Streaming validation temporarily disabled to avoid full-body buffering
@@ -254,24 +267,34 @@ export class CopilotAPIServer {
     //   this.IS_TEST_ENVIRONMENT ? TEST_STREAMING_CONFIG : PRODUCTION_STREAMING_CONFIG
     // ))
 
+    // PERFORMANCE: Skip request size validation for health checks
     // Request size validation middleware (after streaming validation, before route handlers)
-    this.app.use("*", requestSizeMiddleware(this.IS_TEST_ENVIRONMENT ? TEST_LIMITS : PRODUCTION_LIMITS))
+    this.app.use("*", skipForHealthChecks(requestSizeMiddleware(
+      this.IS_TEST_ENVIRONMENT ? TEST_LIMITS : PRODUCTION_LIMITS
+    )))
 
+    // PERFORMANCE OPTIMIZATION (Phase 5, Issue #9): Zod validation middleware
+    // Validates request body once in middleware instead of in route handlers
+    this.app.use("*", skipForHealthChecks(zodValidationMiddleware()))
+    logger.info('SERVER', '✅ Zod validation middleware enabled (skipped for health checks)')
+
+    // PERFORMANCE: Skip cache headers for health checks
     // Cache headers middleware (for optimal client-side caching)
-    this.app.use("*", cacheHeadersMiddleware(
+    this.app.use("*", skipForHealthChecks(cacheHeadersMiddleware(
       this.IS_TEST_ENVIRONMENT ? TEST_CACHE_CONFIG : PRODUCTION_CACHE_CONFIG
-    ))
-    logger.info('SERVER', '📦 Cache headers enabled')
+    )))
+    logger.info('SERVER', '📦 Cache headers enabled (skipped for health checks)')
 
+    // PERFORMANCE: Skip circuit breaker for health checks
     // Circuit breaker middleware (for fault tolerance)
-    this.app.use("*", circuitBreakerMiddleware(
+    this.app.use("*", skipForHealthChecks(circuitBreakerMiddleware(
       this.IS_TEST_ENVIRONMENT ? DEFAULT_CIRCUIT_BREAKER_MIDDLEWARE_CONFIG : PRODUCTION_CIRCUIT_BREAKER_MIDDLEWARE_CONFIG
-    ))
+    )))
 
     // Circuit breaker health and admin endpoints
     this.app.use("*", circuitBreakerHealthMiddleware())
     this.app.use("*", circuitBreakerAdminMiddleware())
-    logger.info('SERVER', '🔄 Circuit breaker middleware enabled')
+    logger.info('SERVER', '🔄 Circuit breaker middleware enabled (skipped for health checks)')
 
     // HTTP/1.1 server ready
     logger.info('SERVER', '🚀 HTTP/1.1 server endpoints enabled')

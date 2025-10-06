@@ -2,13 +2,29 @@ import type { ContentBlock, TextContent, ImageContent } from "../types.js"
 import { logger } from "./logger.js"
 import { CONTENT_CONSTANTS, SIZE_CONSTANTS } from '../constants/index.js'
 import { safeGet, safeArrayAccess, validateInput } from "./errorBoundary.js"
+import { LRUCache } from 'lru-cache'
+import xxhash from 'xxhash-wasm'
+import { messageTransformCache } from './messageTransformCache.js'
+
+// PERFORMANCE: Initialize xxhash once for reuse
+let xxhashInstance: any = null
+const initXXHash = async () => {
+  if (!xxhashInstance) {
+    const hasher = await xxhash()
+    xxhashInstance = hasher
+  }
+  return xxhashInstance
+}
 
 /**
  * Content transformation cache for optimized processing
- * PERFORMANCE OPTIMIZATION: Enhanced with hit/miss tracking and proper LRU eviction
+ * PERFORMANCE OPTIMIZATION (Phase 2, Issue #10):
+ * - Replaced Map with LRU cache for O(1) eviction
+ * - Improved cache key generation with xxhash for large content
+ * - Better fingerprinting for arrays
  */
 class ContentTransformationCache {
-  private cache = new Map<string, { result: any, timestamp: number, lastAccessed: number }>()
+  private cache: LRUCache<string, any>
   private readonly MAX_CACHE_SIZE = 1000
   private readonly CACHE_TTL = 300000 // 5 minutes
 
@@ -17,42 +33,104 @@ class ContentTransformationCache {
   private missCount = 0
   private evictionCount = 0
 
+  constructor() {
+    // PERFORMANCE: Use LRU cache for automatic eviction
+    this.cache = new LRUCache<string, any>({
+      max: this.MAX_CACHE_SIZE,
+      ttl: this.CACHE_TTL,
+      updateAgeOnGet: true,
+      dispose: () => {
+        this.evictionCount++
+      }
+    })
+
+    // Initialize xxhash asynchronously
+    initXXHash().catch(err => {
+      logger.warn('CONTENT_CACHE', `Failed to initialize xxhash: ${err}`)
+    })
+  }
+
   /**
    * Generate cache key from content
+   * PERFORMANCE OPTIMIZATION (Phase 2, Issue #10):
+   * - Direct string keys for small content
+   * - xxhash for large content (10x faster than crypto)
+   * - Array fingerprint by type:length for better hit rates
    */
   private generateKey(content: string | ContentBlock[]): string {
     if (typeof content === "string") {
-      return `str:${content.length}:${content.slice(0, 100)}`
+      // PERFORMANCE: Fast path for small strings
+      if (content.length < 200) {
+        return `s:${content.length}:${content}`
+      }
+
+      // PERFORMANCE: Use xxhash for large strings
+      if (xxhashInstance && content.length > 1000) {
+        try {
+          const hash = xxhashInstance.h64ToString(content)
+          return `sx:${content.length}:${hash}`
+        } catch (err) {
+          // Fallback to slice
+        }
+      }
+
+      return `sl:${content.length}:${content.slice(0, 100)}`
     }
 
-    const summary = content.map(block => `${block.type}:${
-      block.type === "text" ? (block as TextContent).text.length : "img"
-    }`).join("|")
+    // PERFORMANCE: Better array fingerprinting
+    if (Array.isArray(content)) {
+      // Fast path for small arrays
+      if (content.length <= 3) {
+        const summary = content.map(block =>
+          `${block.type}:${block.type === "text" ? (block as TextContent).text.length : "i"}`
+        ).join("|")
+        return `a:${content.length}:${summary}`
+      }
 
-    return `arr:${content.length}:${summary}`
+      // For larger arrays, create a stable fingerprint
+      let totalTextLength = 0
+      let imageCount = 0
+      let textBlockCount = 0
+
+      for (const block of content) {
+        if (block.type === "text") {
+          textBlockCount++
+          totalTextLength += (block as TextContent).text.length
+        } else if (block.type === "image_url") {
+          imageCount++
+        }
+      }
+
+      // Use xxhash for large content arrays
+      if (xxhashInstance && totalTextLength > 1000) {
+        try {
+          const fingerprint = `${textBlockCount}:${totalTextLength}:${imageCount}`
+          const hash = xxhashInstance.h64ToString(fingerprint)
+          return `ax:${content.length}:${hash}`
+        } catch (err) {
+          // Fallback
+        }
+      }
+
+      return `al:${content.length}:${textBlockCount}:${totalTextLength}:${imageCount}`
+    }
+
+    return "unknown"
   }
 
   /**
    * Get cached transformation result
-   * PERFORMANCE OPTIMIZATION: Enhanced with hit/miss tracking and LRU access time update
+   * PERFORMANCE OPTIMIZATION: LRU cache handles TTL and eviction automatically
    */
   get(content: string | ContentBlock[]): any | null {
     const key = this.generateKey(content)
     const cached = this.cache.get(key)
 
-    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
-      // Cache hit - update access time for LRU and increment hit counter
-      cached.lastAccessed = Date.now()
-      this.cache.set(key, cached) // Update the entry to maintain insertion order
+    if (cached !== undefined) {
+      // Cache hit - LRU cache updates access time automatically
       this.hitCount++
-
       logger.debug('CONTENT_CACHE', `✅ Cache hit for content transformation (${this.getHitRate().toFixed(2)}% hit rate)`)
-      return cached.result
-    }
-
-    if (cached) {
-      this.cache.delete(key) // Remove expired entry
-      logger.debug('CONTENT_CACHE', `🕐 Expired cache entry removed`)
+      return cached
     }
 
     // Cache miss
@@ -63,44 +141,15 @@ class ContentTransformationCache {
 
   /**
    * Store transformation result in cache
-   * PERFORMANCE OPTIMIZATION: Enhanced with proper LRU eviction strategy
+   * PERFORMANCE OPTIMIZATION: LRU cache handles eviction automatically
    */
   set(content: string | ContentBlock[], result: any): void {
     const key = this.generateKey(content)
-    const now = Date.now()
 
-    // PERFORMANCE OPTIMIZATION: Proper LRU eviction - remove multiple entries if needed
-    if (this.cache.size >= this.MAX_CACHE_SIZE) {
-      this.evictLRUEntries()
-    }
+    // PERFORMANCE: LRU cache handles eviction automatically
+    this.cache.set(key, result)
 
-    this.cache.set(key, {
-      result,
-      timestamp: now,
-      lastAccessed: now
-    })
-
-    logger.debug('CONTENT_CACHE', `📦 Cached content transformation result (cache size: ${this.cache.size}/${this.MAX_CACHE_SIZE})`)
-  }
-
-  /**
-   * PERFORMANCE OPTIMIZATION: Evict least recently used entries
-   * Removes oldest 20% of entries to make room for new ones
-   */
-  private evictLRUEntries(): void {
-    const entries = Array.from(this.cache.entries())
-
-    // Sort by last accessed time (oldest first)
-    entries.sort((a, b) => a[1].lastAccessed - b[1].lastAccessed)
-
-    // Remove oldest 20% of entries
-    const toRemove = Math.max(1, Math.floor(entries.length * 0.2))
-    for (let i = 0; i < toRemove; i++) {
-      this.cache.delete(entries[i][0])
-      this.evictionCount++
-    }
-
-    logger.debug('CONTENT_CACHE', `🗑️ Evicted ${toRemove} LRU cache entries`)
+    logger.debug('CONTENT_CACHE', `📦 Cached content transformation result (cache size: ${this.cache.size}/${this.cache.max})`)
   }
 
   /**
@@ -273,14 +322,24 @@ export function transformMessageForCopilot(message: {
 /**
  * Transform an array of messages for GitHub Copilot compatibility (optimized)
  * Converts all multi-modal content to text-only format with batch processing
+ * PERFORMANCE OPTIMIZATION (Phase 2, Issue #5):
+ * - Added request-scoped memoization to prevent redundant transformations
+ * - Cache keyed by message fingerprint for fast lookups
  */
 export function transformMessagesForCopilot(messages: Array<{
   role: "system" | "user" | "assistant"
   content: string | ContentBlock[]
-}>): Array<{
+}>, model?: string): Array<{
   role: "system" | "user" | "assistant"
   content: string
 }> {
+  // PERFORMANCE: Check cache first
+  const cacheKey = model || 'default'
+  const cached = messageTransformCache.get(cacheKey, messages)
+  if (cached) {
+    return cached
+  }
+
   const startTime = Date.now()
 
   // Batch process messages for better performance
@@ -290,6 +349,9 @@ export function transformMessagesForCopilot(messages: Array<{
   if (duration > 10) { // Log only if transformation takes significant time
     logger.debug('CONTENT', `Transformed ${messages.length} messages in ${duration}ms`)
   }
+
+  // PERFORMANCE: Cache the result
+  messageTransformCache.set(cacheKey, messages, transformedMessages)
 
   return transformedMessages
 }

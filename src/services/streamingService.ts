@@ -15,6 +15,8 @@ import { streamingManager } from '../utils/streamingManager.js'
 import { config } from '../config/index.js'
 import { ChatCompletionRequest, ChatCompletionStreamChunk } from '../types.js'
 import { ResponseTransformService } from './responseTransformService.js'
+import { BufferAccumulator } from '../utils/bufferAccumulator.js'
+import { stringifyStreamChunk } from '../utils/fastJsonStringify.js'
 
 /**
  * Configuration options for streaming
@@ -52,6 +54,7 @@ export class StreamingService {
     totalChunks: number
     totalBytes: number
   }
+  private decoder: TextDecoder // PERFORMANCE: Reuse TextDecoder instance
 
   constructor() {
     this.responseTransformService = new ResponseTransformService()
@@ -59,6 +62,7 @@ export class StreamingService {
       totalChunks: 0,
       totalBytes: 0
     }
+    this.decoder = new TextDecoder() // PERFORMANCE: Create once, reuse across streams
   }
 
   /**
@@ -102,8 +106,8 @@ export class StreamingService {
       streamCoordinator.registerReader(streamId, reader)
     }
 
-    const decoder = new TextDecoder()
-    let buffer = Buffer.alloc(0) // Use Buffer for efficient memory management
+    // PERFORMANCE OPTIMIZATION (Phase 3, Issue #3): Use BufferAccumulator to eliminate O(n²) concatenation
+    const bufferAccumulator = new BufferAccumulator()
     let chunkCount = 0
     let lastActivityTime = Date.now()
     let actualModel: string | null = null
@@ -172,13 +176,19 @@ export class StreamingService {
           break
         }
 
-        // PERFORMANCE OPTIMIZATION: Efficient buffer management
-        buffer = Buffer.concat([buffer, Buffer.from(value)])
+        // PERFORMANCE OPTIMIZATION (Phase 3, Issue #3): O(1) buffer append instead of O(n²) concat
+        bufferAccumulator.add(value)
         lastActivityTime = Date.now()
 
-        // Process complete lines from buffer
-        const { completeLines, remainingBuffer } = this.extractCompleteLines(buffer)
-        buffer = remainingBuffer as Buffer<ArrayBuffer>
+        // Process complete lines from accumulated buffer
+        const currentBuffer = bufferAccumulator.getBuffer()
+        const { completeLines, remainingBuffer } = this.extractCompleteLines(currentBuffer)
+
+        // Reset accumulator with remaining buffer
+        bufferAccumulator.clear()
+        if (remainingBuffer.length > 0) {
+          bufferAccumulator.add(remainingBuffer)
+        }
 
         for (const line of completeLines) {
           if (line.startsWith('data: ')) {
@@ -205,10 +215,11 @@ export class StreamingService {
                 }
 
                 const transformedChunk = this.responseTransformService.transformStreamChunk(chunk, request)
+                // PERFORMANCE OPTIMIZATION (Phase 3, Issue #12): Use fast-json-stringify for 2-3x faster serialization
                 return {
                   chunk,
                   transformedChunk,
-                  chunkData: JSON.stringify(transformedChunk)
+                  chunkData: stringifyStreamChunk(transformedChunk)
                 }
               },
               streamId,
@@ -270,15 +281,29 @@ export class StreamingService {
 
   /**
    * PERFORMANCE OPTIMIZATION: Extract complete lines from buffer efficiently
-   * Processes buffer data to find complete lines ending with \n
+   * Uses indexOf loop instead of split to avoid array allocation overhead
+   * Handles both \n and \r\n line endings
    */
   private extractCompleteLines(buffer: Buffer): { completeLines: string[]; remainingBuffer: Buffer } {
-    const decoder = new TextDecoder()
-    const text = decoder.decode(buffer)
-    const lines = text.split('\n')
+    // PERFORMANCE: Reuse class-level decoder with stream:true for proper handling
+    const text = this.decoder.decode(buffer, { stream: true })
+    const lines: string[] = []
+    let start = 0
+    let pos = 0
 
-    // Last element might be incomplete if buffer doesn't end with \n
-    const remainingText = lines.pop() || ''
+    // PERFORMANCE: Use indexOf loop instead of split to avoid array allocation
+    while ((pos = text.indexOf('\n', start)) !== -1) {
+      let lineEnd = pos
+      // Handle CRLF (\r\n) line endings
+      if (lineEnd > 0 && text[lineEnd - 1] === '\r') {
+        lineEnd--
+      }
+      lines.push(text.substring(start, lineEnd))
+      start = pos + 1
+    }
+
+    // Remaining text after last newline (incomplete line)
+    const remainingText = text.substring(start)
     const remainingBuffer = Buffer.from(remainingText)
 
     return {

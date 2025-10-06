@@ -11,6 +11,7 @@ import { logger } from "../utils/logger.js"
 import { config } from "../config/index.js"
 import { ChatService } from "../services/chat/chatService.js"
 import { StreamMonitorService } from "../services/streamMonitorService.js"
+import { getValidatedBody } from "../middleware/zodValidation.js"
 
 /**
  * Chat completions route handlers
@@ -50,52 +51,46 @@ export function createChatRoutes(deps: ChatRouteDependencies): Hono {
   /**
    * POST /v1/chat/completions - OpenAI-compatible chat completions endpoint
    * Supports both streaming and non-streaming requests
+   * PERFORMANCE OPTIMIZATION (Phase 5, Issue #9):
+   * Uses pre-validated body from zodValidation middleware to avoid double-pass validation
    */
-  app.post("/chat/completions", async (c) => {
-    // Use already-parsed body from requestSize middleware
-    const parsedBody = (c as any).get('parsedBody')
+  app.post("/chat/completions", async (c: any) => {
+    // PERFORMANCE: Use already-validated body from zodValidation middleware
+    const body = getValidatedBody(c)
 
-    if (!parsedBody) {
-      const errorResponse = createAPIErrorResponse(
-        "Request body could not be parsed",
-        "invalid_request_error",
-        "MISSING_PARSED_BODY"
-      )
-      return c.json(errorResponse, 400)
+    if (!body) {
+      // Fallback: try to get parsed body (for backward compatibility)
+      const parsedBody = c.get('parsedBody')
+
+      if (!parsedBody) {
+        const errorResponse = createAPIErrorResponse(
+          "Request body could not be parsed or validated",
+          "invalid_request_error",
+          "MISSING_VALIDATED_BODY"
+        )
+        return c.json(errorResponse, 400)
+      }
+
+      // Validate if not already validated
+      const validationResult = ChatCompletionRequest.safeParse(parsedBody)
+      if (!validationResult.success) {
+        const errorMessage = validationResult.error.issues.map(issue => {
+          const pathStr = issue.path.join('.')
+          return `${pathStr}: ${issue.message}`
+        }).join(', ')
+
+        const errorResponse = createAPIErrorResponse(
+          errorMessage,
+          "invalid_request_error",
+          "VALIDATION_ERROR"
+        )
+        return c.json(errorResponse, 400)
+      }
+
+      // Use validated data
+      const validatedBody = validationResult.data
+      c.set('validatedBody', validatedBody)
     }
-
-    // Validate the parsed body using Zod schema
-    const validationResult = ChatCompletionRequest.safeParse(parsedBody)
-
-    if (!validationResult.success) {
-      const issues = validationResult.error.issues
-
-      // Log detailed validation errors for debugging (especially role issues)
-      issues.forEach(issue => {
-        if (issue.path.includes('role')) {
-          logger.warn('VALIDATION', `Role validation failed:`, {
-            path: issue.path.join('.'),
-            message: issue.message,
-            expected: 'system | user | assistant',
-            code: issue.code
-          })
-        }
-      })
-
-      const errorMessage = issues.map(issue => {
-        const pathStr = issue.path.join('.')
-        return `${pathStr}: ${issue.message}`
-      }).join(', ')
-
-      const errorResponse = createAPIErrorResponse(
-        errorMessage,
-        "invalid_request_error",
-        "VALIDATION_ERROR"
-      )
-      return c.json(errorResponse, 400)
-    }
-
-    const body = validationResult.data
 
     // Log role normalization statistics in development
     if (config.environment === 'development') {

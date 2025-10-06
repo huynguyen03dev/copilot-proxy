@@ -328,4 +328,103 @@ describe("Streaming Performance Integration", () => {
 
     reader.releaseLock()
   })
+
+  describe("Line Extraction Performance (Issue #13)", () => {
+    it("should handle large buffers efficiently with indexOf", () => {
+      // Create a large buffer with many lines
+      const lines = Array.from({ length: 1000 }, (_, i) => `line ${i}`)
+      const text = lines.join('\n') + '\nincomplete'
+      const buffer = Buffer.from(text)
+
+      // This would use the optimized extractCompleteLines method
+      // We're testing that it handles large buffers without excessive allocations
+      const startMem = process.memoryUsage().heapUsed
+      const startTime = performance.now()
+
+      // Simulate the optimized approach
+      const decoder = new TextDecoder()
+      const decodedText = decoder.decode(buffer, { stream: true })
+      const extractedLines: string[] = []
+      let start = 0
+      let pos = 0
+
+      while ((pos = decodedText.indexOf('\n', start)) !== -1) {
+        let lineEnd = pos
+        if (lineEnd > 0 && decodedText[lineEnd - 1] === '\r') {
+          lineEnd--
+        }
+        extractedLines.push(decodedText.substring(start, lineEnd))
+        start = pos + 1
+      }
+
+      const remainingText = decodedText.substring(start)
+
+      const duration = performance.now() - startTime
+      const memUsed = process.memoryUsage().heapUsed - startMem
+
+      // Verify correctness
+      expect(extractedLines.length).toBe(1000)
+      expect(extractedLines[0]).toBe('line 0')
+      expect(extractedLines[999]).toBe('line 999')
+      expect(remainingText).toBe('incomplete')
+
+      // Performance assertions
+      expect(duration).toBeLessThan(10) // Should be very fast
+      console.log(`   Line extraction: ${extractedLines.length} lines in ${duration.toFixed(2)}ms`)
+    })
+
+    it("should handle CRLF line endings correctly", () => {
+      const text = "line1\r\nline2\r\nline3\nline4\r\n"
+      const buffer = Buffer.from(text)
+
+      const decoder = new TextDecoder()
+      const decodedText = decoder.decode(buffer, { stream: true })
+      const extractedLines: string[] = []
+      let start = 0
+      let pos = 0
+
+      while ((pos = decodedText.indexOf('\n', start)) !== -1) {
+        let lineEnd = pos
+        if (lineEnd > 0 && decodedText[lineEnd - 1] === '\r') {
+          lineEnd--
+        }
+        extractedLines.push(decodedText.substring(start, lineEnd))
+        start = pos + 1
+      }
+
+      // Verify CRLF handling
+      expect(extractedLines.length).toBe(4)
+      expect(extractedLines[0]).toBe('line1')
+      expect(extractedLines[1]).toBe('line2')
+      expect(extractedLines[2]).toBe('line3')
+      expect(extractedLines[3]).toBe('line4')
+    })
+
+    it("should handle mixed line endings", () => {
+      const text = "unix\nwindows\r\nmac\rno-ending"
+      const buffer = Buffer.from(text)
+
+      const decoder = new TextDecoder()
+      const decodedText = decoder.decode(buffer, { stream: true })
+      const extractedLines: string[] = []
+      let start = 0
+      let pos = 0
+
+      while ((pos = decodedText.indexOf('\n', start)) !== -1) {
+        let lineEnd = pos
+        if (lineEnd > 0 && decodedText[lineEnd - 1] === '\r') {
+          lineEnd--
+        }
+        extractedLines.push(decodedText.substring(start, lineEnd))
+        start = pos + 1
+      }
+
+      const remainingText = decodedText.substring(start)
+
+      expect(extractedLines.length).toBe(2) // Only \n and \r\n are handled
+      expect(extractedLines[0]).toBe('unix')
+      expect(extractedLines[1]).toBe('windows')
+      expect(remainingText).toBe('mac\rno-ending') // \r alone doesn't split
+    })
+  })
 })

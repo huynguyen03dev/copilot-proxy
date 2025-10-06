@@ -1,6 +1,8 @@
 import { Context, Next } from "hono"
-import { gzip, deflate } from "zlib"
+import { gzip, deflate, createGzip, createDeflate } from "zlib"
 import { promisify } from "util"
+import { pipeline } from "stream/promises"
+import { Readable, PassThrough } from "stream"
 import { logger } from "../utils/logger.js"
 
 const gzipAsync = promisify(gzip)
@@ -12,6 +14,8 @@ export interface CompressionConfig {
   trackStats: boolean
   algorithms: string[]
   skipApiEndpoints: boolean // Skip compression for API JSON responses to avoid buffering
+  enableStreamingCompression: boolean // PERFORMANCE (Phase 4, Issue #8): Enable streaming compression for large responses
+  streamingThreshold: number // Size threshold for streaming compression (bytes)
 }
 
 export const DEFAULT_COMPRESSION_CONFIG: CompressionConfig = {
@@ -19,7 +23,9 @@ export const DEFAULT_COMPRESSION_CONFIG: CompressionConfig = {
   enableForSSE: false, // Disable for SSE to prevent streaming issues
   trackStats: true,
   algorithms: ['gzip', 'deflate'],
-  skipApiEndpoints: false // Allow compression for API endpoints in development
+  skipApiEndpoints: false, // Allow compression for API endpoints in development
+  enableStreamingCompression: false, // Disabled in dev for simplicity
+  streamingThreshold: 256 * 1024 // 256KB
 }
 
 export const PRODUCTION_COMPRESSION_CONFIG: CompressionConfig = {
@@ -27,7 +33,9 @@ export const PRODUCTION_COMPRESSION_CONFIG: CompressionConfig = {
   enableForSSE: false, // Disable for SSE to prevent streaming issues
   trackStats: true,
   algorithms: ['gzip', 'deflate'],
-  skipApiEndpoints: true // Skip compression for API endpoints to avoid buffering overhead
+  skipApiEndpoints: true, // Skip compression for API endpoints to avoid buffering overhead
+  enableStreamingCompression: true, // PERFORMANCE (Phase 4, Issue #8): Enable streaming compression
+  streamingThreshold: 256 * 1024 // 256KB - use streaming for large responses
 }
 
 function isApiEndpoint(path: string): boolean {
@@ -88,7 +96,7 @@ export function compressionMiddleware(config: Partial<CompressionConfig> = {}) {
 
     if (originalSize < finalConfig.threshold) {
       if (finalConfig.trackStats) {
-        logger.debug('COMPRESSION', `Skipping compression: below threshold (${originalSize} < ${finalConfig.threshold} bytes)`) 
+        logger.debug('COMPRESSION', `Skipping compression: below threshold (${originalSize} < ${finalConfig.threshold} bytes)`)
       }
       c.res = new Response(responseBody, { status: c.res.status, statusText: c.res.statusText, headers: c.res.headers })
       return
@@ -96,6 +104,41 @@ export function compressionMiddleware(config: Partial<CompressionConfig> = {}) {
 
     const algorithm = acceptEncoding.includes('gzip') ? 'gzip' : 'deflate'
 
+    // PERFORMANCE OPTIMIZATION (Phase 4, Issue #8): Streaming compression for large responses
+    if (finalConfig.enableStreamingCompression && originalSize >= finalConfig.streamingThreshold) {
+      try {
+        if (finalConfig.trackStats) {
+          logger.debug('COMPRESSION', `Using streaming compression for large response: ${originalSize} bytes`)
+        }
+
+        const buffer = Buffer.from(responseBody, 'utf8')
+        const readable = Readable.from([buffer])
+        const compressor = algorithm === 'gzip' ? createGzip() : createDeflate()
+
+        const headers = new Headers(c.res.headers)
+        headers.set('content-encoding', algorithm)
+        headers.set('vary', 'Accept-Encoding')
+        headers.delete('content-length') // Remove content-length for streaming
+
+        // Create streaming response
+        const stream = readable.pipe(compressor)
+        c.res = new Response(stream as any, {
+          status: c.res.status,
+          statusText: c.res.statusText,
+          headers
+        })
+
+        if (finalConfig.trackStats) {
+          logger.info('COMPRESSION', `Streaming ${algorithm.toUpperCase()} compression for ${originalSize} bytes`)
+        }
+        return
+      } catch (error) {
+        logger.warn('COMPRESSION', `Streaming compression failed, falling back to buffered: ${error}`)
+        // Fall through to buffered compression
+      }
+    }
+
+    // Buffered compression for small/medium responses
     try {
       const buffer = Buffer.from(responseBody, 'utf8')
       const compressedBuffer = algorithm === 'gzip' ? await gzipAsync(buffer) : await deflateAsync(buffer)

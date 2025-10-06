@@ -276,6 +276,11 @@ function validateJsonStructure(obj: any, limits: RequestSizeLimits, depth = 0): 
 
 /**
  * Optimized JSON structure validation with early termination and performance tracking
+ * PERFORMANCE OPTIMIZATION (Phase 5, Issue #7):
+ * - Stack-based iterative traversal instead of recursion
+ * - Uses for..in instead of Object.values to avoid array allocation
+ * - Early termination on limit violations
+ * - Tracks statistics for monitoring
  */
 function validateJsonStructureOptimized(obj: any, limits: RequestSizeLimits): {
   valid: boolean
@@ -292,15 +297,20 @@ function validateJsonStructureOptimized(obj: any, limits: RequestSizeLimits): {
   let largestArrayFound = 0
   let longestStringFound = 0
 
-  function validateRecursive(value: any, depth: number): { valid: boolean; error?: string } {
+  // PERFORMANCE: Stack-based iterative traversal to avoid recursion overhead
+  const stack: Array<{ value: any; depth: number }> = [{ value: obj, depth: 0 }]
+
+  while (stack.length > 0) {
+    const { value, depth } = stack.pop()!
     nodesVisited++
     maxDepthReached = Math.max(maxDepthReached, depth)
 
     // Early termination for performance
-    if (nodesVisited > 10000) { // Prevent excessive processing
+    if (nodesVisited > 10000) {
       return {
         valid: false,
-        error: "JSON structure too complex (too many nodes)"
+        error: "JSON structure too complex (too many nodes)",
+        stats: { nodesVisited, maxDepthReached, largestArrayFound, longestStringFound }
       }
     }
 
@@ -308,59 +318,52 @@ function validateJsonStructureOptimized(obj: any, limits: RequestSizeLimits): {
     if (depth > limits.maxJsonDepth) {
       return {
         valid: false,
-        error: `JSON nesting too deep: ${depth} levels (max: ${limits.maxJsonDepth})`
+        error: `JSON nesting too deep: ${depth} levels (max: ${limits.maxJsonDepth})`,
+        stats: { nodesVisited, maxDepthReached, largestArrayFound, longestStringFound }
       }
     }
 
-    // Check arrays (optimized)
+    // Check arrays
     if (Array.isArray(value)) {
       largestArrayFound = Math.max(largestArrayFound, value.length)
 
       if (value.length > limits.maxArrayLength) {
         return {
           valid: false,
-          error: `Array too long: ${value.length} elements (max: ${limits.maxArrayLength})`
+          error: `Array too long: ${value.length} elements (max: ${limits.maxArrayLength})`,
+          stats: { nodesVisited, maxDepthReached, largestArrayFound, longestStringFound }
         }
       }
 
-      // Validate array elements with early termination
-      for (let i = 0; i < value.length; i++) {
-        const result = validateRecursive(value[i], depth + 1)
-        if (!result.valid) {
-          return result
-        }
+      // Push array elements onto stack (in reverse order for correct traversal)
+      for (let i = value.length - 1; i >= 0; i--) {
+        stack.push({ value: value[i], depth: depth + 1 })
       }
     }
-    // Check objects (optimized)
+    // Check objects - PERFORMANCE: Use for..in instead of Object.values
     else if (value && typeof value === 'object') {
-      // Use Object.values for better performance than for...in
-      const values = Object.values(value)
-      for (let i = 0; i < values.length; i++) {
-        const result = validateRecursive(values[i], depth + 1)
-        if (!result.valid) {
-          return result
+      for (const key in value) {
+        if (value.hasOwnProperty(key)) {
+          stack.push({ value: value[key], depth: depth + 1 })
         }
       }
     }
-    // Check strings (optimized)
+    // Check strings
     else if (typeof value === 'string') {
       longestStringFound = Math.max(longestStringFound, value.length)
 
       if (value.length > limits.maxStringLength) {
         return {
           valid: false,
-          error: `String too long: ${value.length} characters (max: ${limits.maxStringLength})`
+          error: `String too long: ${value.length} characters (max: ${limits.maxStringLength})`,
+          stats: { nodesVisited, maxDepthReached, largestArrayFound, longestStringFound }
         }
       }
     }
-
-    return { valid: true }
   }
 
-  const result = validateRecursive(obj, 0)
-
   return {
-    ...result,
+    valid: true,
     stats: {
       nodesVisited,
       maxDepthReached,
