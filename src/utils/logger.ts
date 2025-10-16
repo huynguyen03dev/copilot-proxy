@@ -23,6 +23,9 @@ export interface LoggerConfig {
   enableEndpointLogs: boolean
   enableModelLogs: boolean
   enableMemoryLogs: boolean
+  progressIntervalMs: number
+  progressSampleRate: number
+  format: 'text' | 'json'
 }
 
 export interface StreamingLogConfig {
@@ -47,6 +50,7 @@ export class Logger {
   private readonly BATCH_SIZE = 5
   private batchTimeout: NodeJS.Timeout | null = null
   private correlationId: string | null = null
+  private lastProgressAt = new Map<string, number>()
 
   constructor(customConfig?: Partial<LoggerConfig>) {
     this.config = {
@@ -59,6 +63,9 @@ export class Logger {
       enableEndpointLogs: config.logging.enableEndpointLogs,
       enableModelLogs: config.logging.enableModelLogs,
       enableMemoryLogs: config.logging.enableMemoryLogs,
+      progressIntervalMs: config.logging.progressIntervalMs,
+      progressSampleRate: config.logging.progressSampleRate,
+      format: config.logging.format,
       ...customConfig
     }
   }
@@ -84,6 +91,19 @@ export class Logger {
    */
   private isLevelEnabled(level: LogLevel): boolean {
     return this.shouldLog(level)
+  }
+
+  /**
+   * Simple hash function for deterministic sampling
+   */
+  private simpleHash(str: string): number {
+    let hash = 0
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i)
+      hash = ((hash << 5) - hash) + char
+      hash = hash & hash // Convert to 32bit integer
+    }
+    return Math.abs(hash)
   }
 
   /**
@@ -142,6 +162,27 @@ export class Logger {
   }
 
   private formatMessage(level: LogLevel, category: string, message: string, ...args: unknown[]): string {
+    // JSON format output
+    if (this.config.format === 'json') {
+      const logObject: Record<string, unknown> = {
+        timestamp: this.getCachedTimestamp(),
+        level: LogLevel[level].toLowerCase(),
+        category,
+        message
+      }
+
+      if (this.correlationId) {
+        logObject.correlationId = this.correlationId
+      }
+
+      if (args.length > 0) {
+        logObject.context = args.length === 1 ? args[0] : args
+      }
+
+      return JSON.stringify(logObject)
+    }
+
+    // Text format output (original behavior)
     // PERFORMANCE OPTIMIZATION: Use template literals for better performance
     let result = ''
 
@@ -286,40 +327,64 @@ export class Logger {
   streamEnd(streamId: string, activeCount: number, maxStreams: number): void {
     // PERFORMANCE OPTIMIZATION: Fast path for disabled progress logs
     if (!this.config.enableProgressLogs || !this.isLevelEnabled(LogLevel.INFO)) return
+    
+    // Clean up throttle state for this stream to prevent memory leaks
+    this.lastProgressAt.delete(streamId)
+    
     this.info('STREAM', `📉 Stream ${streamId} ended. Active: ${activeCount}/${maxStreams}`)
   }
 
-  streamProgress(config: StreamingLogConfig): void {
+  streamProgress(streamConfig: StreamingLogConfig): void {
     if (!this.config.enableProgressLogs) return
 
-    if (!this.shouldLogProgress(config.chunkCount, config.totalExpected)) return
+    // Time-based throttle: skip if called too soon for this stream
+    const now = Date.now()
+    const last = this.lastProgressAt.get(streamConfig.streamId) ?? 0
+    if (now - last < this.config.progressIntervalMs) return
+
+    // Optional deterministic sampling: only log a subset of streams
+    if (this.config.progressSampleRate > 0) {
+      const hash = this.simpleHash(streamConfig.streamId)
+      const sample = (hash % 1000) / 1000
+      if (sample >= this.config.progressSampleRate) return
+    }
+
+    // Chunk-based frequency check (if configured)
+    if (!this.shouldLogProgress(streamConfig.chunkCount, streamConfig.totalExpected)) return
+
+    // Update last progress time for this stream
+    this.lastProgressAt.set(streamConfig.streamId, now)
 
     let message: string
 
     // Use percentage-based progress for large streams (>100 chunks)
-    if (config.totalExpected && config.totalExpected > 100) {
-      const percentage = Math.round((config.chunkCount / config.totalExpected) * 100)
-      message = `📊 Stream ${config.streamId}: ${percentage}% complete (${config.chunkCount}/${config.totalExpected})`
+    if (streamConfig.totalExpected && streamConfig.totalExpected > 100) {
+      const percentage = Math.round((streamConfig.chunkCount / streamConfig.totalExpected) * 100)
+      message = `📊 Stream ${streamConfig.streamId}: ${percentage}% complete (${streamConfig.chunkCount}/${streamConfig.totalExpected})`
     } else {
-      message = `📊 Stream ${config.streamId}: ${config.chunkCount} chunks processed`
+      const modelSuffix = streamConfig.model ? ` - ${streamConfig.model}` : ''
+      message = `📊 Stream ${streamConfig.streamId}: ${streamConfig.chunkCount} chunks processed${modelSuffix}`
     }
 
     this.debug('PROGRESS', message)
   }
 
-  streamComplete(config: StreamingLogConfig): void {
+  streamComplete(streamConfig: StreamingLogConfig): void {
     if (!this.config.enableProgressLogs) return
 
-    let message = `✅ Stream ${config.streamId} completed: ${config.chunkCount} chunks`
+    // Clean up throttle state for this stream to prevent memory leaks
+    this.lastProgressAt.delete(streamConfig.streamId)
 
-    if (config.duration) {
-      const durationSec = Math.round(config.duration / 1000)
-      const rate = Math.round(config.chunkCount / (config.duration / 1000))
+    let message = `✅ Stream ${streamConfig.streamId} completed: ${streamConfig.chunkCount} chunks`
+
+    if (streamConfig.duration) {
+      const durationSec = Math.round(streamConfig.duration / 1000)
+      const rate = Math.round(streamConfig.chunkCount / (streamConfig.duration / 1000))
       message += ` in ${durationSec}s (${rate}/sec)`
     }
 
-    if (config.model) {
-      message += ` - ${config.model}`
+    if (streamConfig.model) {
+      message += ` - ${streamConfig.model}`
     }
 
     this.info('STREAM', message)
@@ -416,6 +481,7 @@ export class Logger {
   // Cleanup method
   destroy(): void {
     this.flushBatch()
+    this.lastProgressAt.clear()
   }
 }
 

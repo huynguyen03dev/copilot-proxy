@@ -257,7 +257,8 @@ export class StreamingService {
             // PERFORMANCE OPTIMIZATION: Throttle progress logging and gate behind config flag
             // Reduces I/O overhead under load by sampling logs and allowing disable in production
             if (config.logging.enableProgressLogs) {
-              const logFrequency = opts.useOptimizations ? 10 : 5
+              // Use configured frequency, or default to 50 chunks for reasonable output
+              const logFrequency = config.logging.chunkLogFrequency || 50
               if (chunkCount % logFrequency === 0) {
                 streamLogger.progress({
                   streamId,

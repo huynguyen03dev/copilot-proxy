@@ -458,7 +458,7 @@ export class CopilotAPIServer {
    * Graceful shutdown
    */
   async shutdown(): Promise<void> {
-    console.log(`🛑 Initiating graceful shutdown...`)
+    logger.info('SERVER', '🛑 Initiating graceful shutdown...')
 
     // Stop accepting new connections
     if (this.server) {
@@ -476,13 +476,13 @@ export class CopilotAPIServer {
       const streamMonitor = this.services.streamMonitorService
       
       while (streamMonitor.getActiveStreamCount() > 0 && (Date.now() - startTime) < shutdownTimeout) {
-        console.log(`⏳ Waiting for ${streamMonitor.getActiveStreamCount()} active streams to complete...`)
+        logger.info('SERVER', `⏳ Waiting for ${streamMonitor.getActiveStreamCount()} active streams to complete...`)
         await new Promise(resolve => setTimeout(resolve, 1000))
       }
 
       // Force close remaining streams
       if (streamMonitor.getActiveStreamCount() > 0) {
-        console.log(`⚠️ Force closing ${streamMonitor.getActiveStreamCount()} remaining streams`)
+        logger.warn('SERVER', `⚠️ Force closing ${streamMonitor.getActiveStreamCount()} remaining streams`)
       }
 
       // Dispose all services

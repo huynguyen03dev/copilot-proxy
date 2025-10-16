@@ -32,6 +32,9 @@ const LoggingConfigSchema = z.object({
   enableEndpointLogs: z.boolean().default(true),
   enableModelLogs: z.boolean().default(true),
   enableMemoryLogs: z.boolean().default(true),
+  progressIntervalMs: z.number().min(100).default(2000), // Time-based throttle for progress logs (ms)
+  progressSampleRate: z.number().min(0).max(1).default(0), // 0 = all streams, 0.1 = 10% of streams, etc.
+  format: z.enum(['text', 'json']).default('text'), // Log output format
 })
 
 const SecurityConfigSchema = z.object({
@@ -128,6 +131,9 @@ function parseEnvironmentConfig(): Config {
       enableEndpointLogs: parseBoolean(env.ENABLE_ENDPOINT_LOGS, true),
       enableModelLogs: parseBoolean(env.ENABLE_MODEL_LOGS, true),
       enableMemoryLogs: parseBoolean(env.ENABLE_MEMORY_LOGS, true),
+      progressIntervalMs: parseInteger(env.PROGRESS_INTERVAL_MS, 2000),
+      progressSampleRate: parseFloat(env.PROGRESS_SAMPLE_RATE || '0'),
+      format: (env.LOG_FORMAT as any) || 'text',
     },
     security: {
       corsOrigins: parseArray(env.ALLOWED_ORIGINS, ['http://localhost:3000']),
@@ -176,12 +182,14 @@ function createConfig(): Config {
 
       validatedConfig.logging.level = validatedConfig.logging.level === 'debug' ? 'info' : validatedConfig.logging.level
       validatedConfig.logging.enableProgressLogs = false // Disable progress logs in production to reduce I/O overhead
+      validatedConfig.logging.progressSampleRate = 0 // No sampling needed in production (progress logs disabled)
       validatedConfig.monitoring.enableGarbageCollection = true
       validatedConfig.performance.enableCompression = true
       validatedConfig.performance.cacheHeaders = true
     } else if (validatedConfig.environment === 'development') {
       // Development optimizations
       validatedConfig.logging.level = 'debug'
+      validatedConfig.logging.progressSampleRate = 0.1 // Sample 10% of streams in development to reduce noise
       validatedConfig.monitoring.memoryCheckInterval = Math.min(validatedConfig.monitoring.memoryCheckInterval, 15000)
       validatedConfig.performance.enableCompression = true // Enable compression in development for testing
       validatedConfig.security.enableRateLimit = false
