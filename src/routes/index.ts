@@ -3,6 +3,7 @@ import { createHealthRoutes, ServerInfo } from "./health.routes.js"
 import { createAuthRoutes } from "./auth.routes.js"
 import { createChatRoutes, ChatRouteDependencies } from "./chat.routes.js"
 import { createModelsRoutes } from "./models.routes.js"
+import { createMessagesRoutes, MessagesRouteDependencies } from "./messages.routes.js"
 
 /**
  * Route aggregator
@@ -12,6 +13,7 @@ import { createModelsRoutes } from "./models.routes.js"
 export interface RouteServices {
   serverInfo: ServerInfo
   chatDeps: ChatRouteDependencies
+  messagesDeps: MessagesRouteDependencies
 }
 
 /**
@@ -35,4 +37,8 @@ export function setupRoutes(app: Hono, services: RouteServices): void {
   // Models routes (/v1/models)
   const modelsRoutes = createModelsRoutes()
   app.route("/v1", modelsRoutes)
+
+  // Anthropic Messages routes (/v1/messages)
+  const messagesRoutes = createMessagesRoutes(services.messagesDeps)
+  app.route("/v1", messagesRoutes)
 }

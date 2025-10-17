@@ -344,6 +344,12 @@ export class CopilotAPIServer {
         streamMonitor: streamMonitor,
         maxConcurrentStreams: this.MAX_CONCURRENT_STREAMS,
         isTestEnvironment: this.IS_TEST_ENVIRONMENT
+      },
+      messagesDeps: {
+        chatService: services.chat,
+        streamMonitor: streamMonitor,
+        maxConcurrentStreams: this.MAX_CONCURRENT_STREAMS,
+        isTestEnvironment: this.IS_TEST_ENVIRONMENT
       }
     })
   }
@@ -437,6 +443,7 @@ export class CopilotAPIServer {
 
     logger.info('SERVER', `🚀 GitHub Copilot API Server running on http://${this.hostname}:${this.port}`)
     logger.info('SERVER', `📖 OpenAPI endpoint: http://${this.hostname}:${this.port}/v1/chat/completions`)
+    logger.info('SERVER', `🤖 Anthropic endpoint: http://${this.hostname}:${this.port}/v1/messages`)
     logger.info('SERVER', `🔐 Auth status: http://${this.hostname}:${this.port}/auth/status`)
     logger.info('SERVER', `📋 Available models: http://${this.hostname}:${this.port}/v1/models`)
     logger.info('SERVER', `📊 Metrics endpoint: http://${this.hostname}:${this.port}/metrics`)

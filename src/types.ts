@@ -253,6 +253,29 @@ export {
   parseUserAgent
 } from './types/http.js'
 
+// Re-export Anthropic types
+export type {
+  AnthropicTextContent,
+  AnthropicImageContent,
+  AnthropicContentBlock,
+  AnthropicMessage,
+  AnthropicMessagesRequest,
+  AnthropicMessagesResponse,
+  AnthropicResponseTextContent,
+  AnthropicStreamEvent
+} from './types/anthropic.js'
+
+export {
+  AnthropicTextContent as AnthropicTextContentSchema,
+  AnthropicImageContent as AnthropicImageContentSchema,
+  AnthropicContentBlock as AnthropicContentBlockSchema,
+  AnthropicMessage as AnthropicMessageSchema,
+  AnthropicMessagesRequest as AnthropicMessagesRequestSchema,
+  AnthropicMessagesResponse as AnthropicMessagesResponseSchema,
+  AnthropicResponseTextContent as AnthropicResponseTextContentSchema,
+  AnthropicStreamEvent as AnthropicStreamEventSchema
+} from './types/anthropic.js'
+
 // Legacy APIError interface for backward compatibility
 export interface APIError {
   error: {

@@ -95,6 +95,30 @@ const response = await client.chat.completions.create({
 });
 ```
 
+### With Anthropic Claude API Format
+```bash
+curl -X POST http://127.0.0.1:8069/v1/messages \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-3-5-sonnet-20241022",
+    "max_tokens": 1024,
+    "messages": [
+      {"role": "user", "content": "Hello, Claude!"}
+    ]
+  }'
+```
+
+### With Droid CLI
+The `/v1/messages` endpoint is compatible with tools that use Anthropic's Claude API format:
+
+```bash
+# Configure your droid CLI to use the proxy
+export ANTHROPIC_BASE_URL="http://127.0.0.1:8069/v1"
+
+# Now use droid normally - it will route through the proxy to GitHub Copilot
+droid "your prompt here"
+```
+
 ## 📚 Programmatic Usage
 
 You can also use copilot-proxy as a library in your Node.js applications:
@@ -148,6 +172,7 @@ copilot-proxy --help        # Show all available options
 ## 🔍 Key API Endpoints
 
 - `POST /v1/chat/completions` - Main chat endpoint (OpenAI-compatible)
+- `POST /v1/messages` - Anthropic Claude-compatible endpoint
 - `GET /v1/models` - List available models
 - `GET /auth/status` - Check authentication status
 - `GET /` - Health check and server info
